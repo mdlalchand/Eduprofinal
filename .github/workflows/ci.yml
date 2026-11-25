@@ -12,15 +12,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: '22'
-          cache: 'npm'
-      - run: npm ci
+          bun-version: latest
+      - run: bun install --frozen-lockfile
       - run: npm run lint
       - run: npm run build
       - name: Run unit and integration tests
-        run: npx tsx --test src/lib/*.test.ts src/server/*.test.ts
+        run: bunx tsx --test src/lib/*.test.ts src/server/*.test.ts
       - name: Verify installable Laravel ZIP archive hygiene
         run: |
           test -f public/downloads/academy-lms-laravel13.zip
