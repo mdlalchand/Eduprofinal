@@ -16,15 +16,26 @@ jobs:
         with:
           bun-version: latest
       - run: bun install --frozen-lockfile
-      - run: npm run lint
-      - run: npm run build
+      - run: bun run lint
+      - run: bun run build
       - name: Run unit and integration tests
         run: bunx tsx --test src/lib/*.test.ts src/server/*.test.ts
-      - name: Verify installable Laravel ZIP archive hygiene
+      - name: Build and verify installable Laravel ZIP archive
         run: |
-          test -f public/downloads/academy-lms-laravel13.zip
+          mkdir -p public/downloads
+          rm -f public/downloads/academy-lms-laravel13.zip
+          cd laravel-system
+          zip -qr ../public/downloads/academy-lms-laravel13.zip . \
+            -x '.env' 'vendor/*' 'storage/installed.lock' 'storage/logs/*' 'storage/framework/cache/*' 'storage/framework/sessions/*' 'storage/framework/views/*'
+          cd ..
           unzip -t public/downloads/academy-lms-laravel13.zip
           ! unzip -l public/downloads/academy-lms-laravel13.zip | grep -qE '(^|/)(\.env|storage/installed\.lock)'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: academy-lms-laravel13-installer
+          path: public/downloads/academy-lms-laravel13.zip
+          if-no-files-found: error
+          retention-days: 30
 
   laravel-production-suite:
     name: Laravel 13 PHP 8.3 Feature & Security Tests
