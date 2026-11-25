@@ -9,6 +9,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 
 class AuthController extends Controller
 {
@@ -96,7 +98,7 @@ class AuthController extends Controller
             'branch_code' => 'nullable|string|max:32',
             'branch_city' => 'nullable|string|max:80',
             'branch_address' => 'nullable|string|max:240',
-            'password' => 'required|string|min:6',
+            'password' => 'required|string|min:8',
         ]);
 
         $linkedStudent = null;
@@ -199,11 +201,25 @@ class AuthController extends Controller
                 'password_reset_token_hash' => hash('sha256', $rawToken),
                 'password_reset_expires_at' => now()->addHour(),
             ]);
+
+            try {
+                Mail::raw(
+                    "Your {$user->role} account password recovery token is: {$rawToken}\n\nThis token expires in 60 minutes. If you did not request this, ignore this email.",
+                    function ($message) use ($user) {
+                        $message->to($user->email)->subject('Account password recovery');
+                    }
+                );
+            } catch (\Throwable $exception) {
+                Log::error('Password recovery email could not be delivered.', [
+                    'user_id' => $user->id,
+                    'exception' => $exception->getMessage(),
+                ]);
+            }
         }
 
         return redirect()
             ->route('recover', ['role' => $data['expected_role'] ?? 'student'])
-            ->with('status', 'If a matching account exists, a recovery token has been issued. Contact the Main Admin if you need assisted token issuance.');
+            ->with('status', 'If a matching account exists, a recovery token has been sent to its registered email address. The token expires in 60 minutes.');
     }
 
     public function confirmPasswordReset(Request $request)
@@ -211,7 +227,7 @@ class AuthController extends Controller
         $data = $request->validate([
             'email' => 'required|email',
             'token' => 'required|string|min:6|max:64',
-            'password' => 'required|string|min:6',
+            'password' => 'required|string|min:8',
             'expected_role' => 'nullable|in:admin,branch,teacher,student,guardian',
         ]);
 
