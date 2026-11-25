@@ -281,9 +281,9 @@ class PublicController extends Controller
         return back()->with('status', 'Thank you for engaging with the community!');
     }
 
-    public function verifyCertificate(Request $request)
+    public function verifyCertificate(Request $request, ?string $code = null)
     {
-        $code = strtoupper(trim((string) $request->query('code', '')));
+        $code = strtoupper(trim((string) ($code ?? $request->query('code', ''))));
         $certificate = $code !== '' ? Certificate::where('certificate_code', $code)->first() : null;
         return view('certificates.verify', compact('certificate', 'code'));
     }
