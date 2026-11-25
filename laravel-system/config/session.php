@@ -18,7 +18,7 @@ return [
     ),
     'path' => env('SESSION_PATH', '/'),
     'domain' => env('SESSION_DOMAIN'),
-    'secure' => env('SESSION_SECURE_COOKIE', str_starts_with((string) env('APP_URL', ''), 'https://')),
+    'secure' => filter_var(env('SESSION_SECURE_COOKIE', env('APP_ENV') === 'production' || str_starts_with((string) env('APP_URL', ''), 'https://')), FILTER_VALIDATE_BOOLEAN),
     'http_only' => filter_var(env('SESSION_HTTP_ONLY', true), FILTER_VALIDATE_BOOLEAN),
     'same_site' => env('SESSION_SAME_SITE', 'lax'),
     'partitioned' => env('SESSION_PARTITIONED_COOKIE', false),

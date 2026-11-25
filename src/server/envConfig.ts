@@ -48,6 +48,15 @@ export function parsePgSslConfig(
   caPathOverride = process.env.PGSSLROOTCERT
 ): PgSslConfig {
   const normalized = (pgSslRaw ?? '').trim().toLowerCase();
+  const production = process.env.NODE_ENV === 'production';
+  const remoteHost = (() => {
+    if (pgHost && !isLocalDbHost(pgHost)) return true;
+    if (!databaseUrl) return false;
+    try { return !isLocalDbHost(new URL(databaseUrl).hostname); } catch { return false; }
+  })();
+  const rejectInsecureProductionMode = (mode: string): never => {
+    throw new Error(`[DB SSL] PostgreSQL SSL mode "${mode}" is not permitted for a remote production database. Use verify-full with a trusted CA certificate.`);
+  };
 
   if (
     normalized === 'false' ||
@@ -56,6 +65,7 @@ export function parsePgSslConfig(
     normalized === 'off' ||
     normalized === 'no'
   ) {
+    if (production && remoteHost) rejectInsecureProductionMode(normalized || 'disable');
     return false;
   }
 
@@ -74,6 +84,7 @@ export function parsePgSslConfig(
   }
 
   if (normalized === 'no-verify' || normalized === 'allow') {
+    if (production && remoteHost) rejectInsecureProductionMode(normalized);
     const ca = loadCaCertificate(caPathOverride);
     return ca ? { rejectUnauthorized: false, ca } : { rejectUnauthorized: false };
   }
@@ -86,12 +97,16 @@ export function parsePgSslConfig(
       const urlRootCert = (parsed.searchParams.get('sslrootcert') ?? '').trim();
       const effectiveCaPath = urlRootCert || caPathOverride;
 
-      if (sslMode === 'disable') return false;
+      if (sslMode === 'disable') {
+        if (production && !isLocalDbHost(parsed.hostname)) rejectInsecureProductionMode(sslMode);
+        return false;
+      }
       if (sslMode === 'verify-full' || sslMode === 'verify-ca' || sslMode === 'require') {
         const ca = loadCaCertificate(effectiveCaPath);
         return ca ? { rejectUnauthorized: true, ca } : { rejectUnauthorized: true };
       }
       if (sslMode === 'no-verify' || sslMode === 'prefer' || sslMode === 'allow') {
+        if (production && !isLocalDbHost(parsed.hostname)) rejectInsecureProductionMode(sslMode);
         const ca = loadCaCertificate(effectiveCaPath);
         return ca ? { rejectUnauthorized: false, ca } : { rejectUnauthorized: false };
       }
@@ -252,7 +267,7 @@ export function getSafeEnvironmentValidationReport(
       key: 'PGSSL',
       category: 'Database',
       required: false,
-      note: 'PostgreSQL SSL mode: disable | verify-full | require | no-verify',
+      note: 'PostgreSQL SSL mode: verify-full (production) or prefer (local development)',
     },
     {
       key: 'SESSION_SECRET',
@@ -383,10 +398,10 @@ export function getSafeEnvironmentValidationReport(
       note: 'WhatsApp Business Cloud API Access Token',
     },
     {
-      key: 'GEMINI_API_KEY',
+      key: 'AI_API_KEY',
       category: 'AI',
       required: false,
-      note: 'Server-side Gemini API key for AI Tutor & question generation',
+      note: 'Server-side API key for the configured AI provider',
     },
   ];
 

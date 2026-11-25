@@ -11,7 +11,8 @@ import type {
 
 export function createDefaultIntegrations(): IntegrationConfig[] {
   const now = new Date().toISOString();
-  const hasGeminiEnv = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim().length > 8);
+  const aiApiKey = process.env.AI_API_KEY ?? '';
+  const hasAiProviderEnv = aiApiKey.trim().length > 8;
   const hasSmtpEnv = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
   const hasBkashEnv = Boolean(process.env.BKASH_APP_KEY && process.env.BKASH_APP_SECRET);
   const hasNagadEnv = Boolean(process.env.NAGAD_MERCHANT_ID && process.env.NAGAD_PRIVATE_KEY);
@@ -183,20 +184,20 @@ export function createDefaultIntegrations(): IntegrationConfig[] {
       updatedAt: now,
     },
     {
-      id: 'int-gemini',
-      key: 'gemini_ai',
-      name: 'Google Gemini AI Engine',
+      id: 'int-ai-provider',
+      key: 'ai_provider',
+      name: 'AI Service Provider',
       category: 'AI',
-      description: 'Powers bilingual AI grammar tutor, question generation, and academic analytics.',
-      enabled: hasGeminiEnv,
+      description: 'Configurable provider for bilingual AI tutoring, question generation, and academic analytics.',
+      enabled: hasAiProviderEnv,
       mode: 'live',
-      configured: hasGeminiEnv,
-      healthStatus: hasGeminiEnv ? 'configured' : 'awaiting_configuration',
+      configured: hasAiProviderEnv,
+      healthStatus: hasAiProviderEnv ? 'configured' : 'awaiting_configuration',
       publicConfig: {
-        model: 'gemini-2.5-flash',
+        model: process.env.AI_MODEL || '',
       },
       secretsMasked: {
-        apiKey: hasGeminiEnv ? '••••••••env' : 'Not Configured',
+        apiKey: hasAiProviderEnv ? '••••••••env' : 'Not Configured',
       },
       updatedAt: now,
     },

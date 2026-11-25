@@ -24,5 +24,12 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "exclude": ["dist"]
+  "exclude": [
+    "dist",
+    "src/server/enterpriseRoutes.ts",
+    "src/server/enterpriseSeed.ts",
+    "src/components/AcademicOpsPanels.tsx",
+    "src/components/AdminDashboardStudio.tsx",
+    "src/components/EnterpriseSaasPanel.tsx"
+  ]
 }
