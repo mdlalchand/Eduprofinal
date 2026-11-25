@@ -28,6 +28,11 @@ jobs:
         run: |
           find app bootstrap config database routes tests -type f -name '*.php' -print0 | xargs -0 -n1 php -l
 
+      - name: Prepare writable Laravel runtime directories
+        run: |
+          mkdir -p bootstrap/cache storage/framework/cache/data storage/framework/sessions storage/framework/views storage/framework/testing storage/logs storage/app/backups storage/app/private storage/app/public storage/app/update-rollback storage/app/update-staging
+          chmod -R ug+rwX bootstrap/cache storage
+
       - name: Install Composer dependencies
         run: composer install --no-interaction --prefer-dist
 
