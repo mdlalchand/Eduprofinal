@@ -24,6 +24,13 @@ jobs:
           coverage: none
           extensions: mbstring, openssl, pdo_sqlite, pdo_mysql, pdo_pgsql, zip, gd, xml, ctype, bcmath, curl, tokenizer
 
+      - name: Assert Laravel-only repository and clean branding paths
+        run: |
+          test ! -e package.json
+          test ! -e server.ts
+          test ! -d src
+          if git ls-files | grep -Eiq '(^|/)(\\.aistudio|aistudio)(/|$)'; then exit 1; fi
+
       - name: Validate PHP syntax
         run: |
           find app bootstrap config database routes tests -type f -name '*.php' -print0 | xargs -0 -n1 php -l
@@ -69,7 +76,7 @@ jobs:
             if curl --silent --fail http://127.0.0.1:8000/ >/dev/null; then break; fi
             sleep 1
           done
-          for path in / /courses /instructors /products /ebooks /board-result /community /verify-certificate /login/student /login/teacher /login/guardian /login/branch /register/student /register/teacher /register/guardian /register/branch /recover/student /recover/teacher /recover/guardian /recover/branch; do
+          for path in / /about /about-us /contact /contact-us /terms-and-conditions /privacy-policy /refund-policy /courses /instructors /products /ebooks /board-result /community /verify-certificate /verify-certificate/TEST /profile /login/student /login/teacher /login/guardian /login/branch /register/student /register/teacher /register/guardian /register/branch /recover/student /recover/teacher /recover/guardian /recover/branch; do
             curl --fail --silent "http://127.0.0.1:8000$path" >/dev/null
           done
 
