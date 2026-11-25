@@ -114,7 +114,7 @@ class StaticPagesAndContactTest extends TestCase
             'message' => 'Please contact me about admission.',
         ]);
 
-        $this->actingAs($admin)->get(route('portal.index'))->assertOk()->assertSee('Public Content &amp; CMS Pages');
+        $this->actingAs($admin)->get(route('portal.index'))->assertOk()->assertSee('Public Content & CMS Pages');
         $this->actingAs($admin)->patch(route('portal.contact_inquiries.status', $inquiry), ['status' => 'contacted'])
             ->assertRedirect();
         $this->assertSame('contacted', $inquiry->fresh()->status);
