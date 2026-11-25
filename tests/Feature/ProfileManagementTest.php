@@ -58,6 +58,7 @@ class ProfileManagementTest extends TestCase
         ])->assertRedirect()->assertSessionHas('status');
 
         $this->assertSame('Updated Student', $user->fresh()->name);
+        $this->assertSame('original@student.example', $user->fresh()->email);
         $this->assertSame('student', $user->fresh()->role);
         $this->assertSame('active', $user->fresh()->status);
     }
