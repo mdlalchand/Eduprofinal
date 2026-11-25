@@ -41,7 +41,7 @@ class InstallController extends Controller
         $data = $request->validate([
             'company_name' => 'required|string|max:120',
             'tagline' => 'nullable|string|max:180',
-            'app_url' => 'required|url',
+            'app_url' => 'required|url|starts_with:https://',
             'support_email' => 'required|email|max:140',
             'support_phone' => 'nullable|string|max:40',
             'office_address' => 'nullable|string|max:240',
@@ -57,6 +57,7 @@ class InstallController extends Controller
             'db_username' => 'nullable|string|max:120',
             'db_password' => 'nullable|string|max:200',
             'db_sslmode' => 'nullable|in:disable,prefer,require,verify-ca,verify-full',
+            'db_sslrootcert' => 'nullable|string|max:500',
             'admin_name' => 'required|string|max:120',
             'admin_email' => 'required|email|max:140',
             'admin_password' => 'required|string|min:8',
@@ -65,7 +66,15 @@ class InstallController extends Controller
         $driver = $data['db_connection'];
         $dbDatabaseValue = trim($data['db_database']);
         $sslMode = (string) ($data['db_sslmode'] ?? 'prefer');
-        $isHttps = str_starts_with(strtolower(trim($data['app_url'])), 'https://');
+        $dbHost = strtolower(trim((string) ($data['db_host'] ?? '127.0.0.1')));
+        $isRemoteDb = $driver !== 'sqlite' && !in_array($dbHost, ['', 'localhost', '127.0.0.1', '::1'], true);
+        $sslRootCert = trim((string) ($data['db_sslrootcert'] ?? ''));
+        if ($isRemoteDb && ($sslRootCert === '' || !is_file($sslRootCert) || !is_readable($sslRootCert))) {
+            return back()->withInput()->withErrors(['db_sslrootcert' => 'Remote databases require a readable CA certificate file.']);
+        }
+        if ($isRemoteDb && $driver === 'pgsql' && $sslMode !== 'verify-full') {
+            return back()->withInput()->withErrors(['db_sslmode' => 'Remote PostgreSQL requires Verify Full (Strict CA).']);
+        }
 
         if ($driver === 'sqlite') {
             $sqlitePath = str_starts_with($dbDatabaseValue, '/')
@@ -95,9 +104,14 @@ class InstallController extends Controller
 
             try {
                 $dsn = $driver === 'pgsql'
-                    ? "pgsql:host={$host};port={$port};dbname={$dbDatabaseValue};sslmode={$sslMode}"
+                    ? "pgsql:host={$host};port={$port};dbname={$dbDatabaseValue};sslmode={$sslMode}" . ($isRemoteDb ? ";sslrootcert={$sslRootCert}" : '')
                     : "mysql:host={$host};port={$port};dbname={$dbDatabaseValue};charset=utf8mb4";
-                new PDO($dsn, $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+                $pdoOptions = [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION];
+                if ($isRemoteDb && $driver === 'mysql') {
+                    $pdoOptions[PDO::MYSQL_ATTR_SSL_CA] = $sslRootCert;
+                    $pdoOptions[PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT] = true;
+                }
+                new PDO($dsn, $user, $pass, $pdoOptions);
             } catch (\Throwable $e) {
                 return back()->withInput()->withErrors(['db' => 'Database connection failed: ' . $e->getMessage()]);
             }
@@ -121,7 +135,14 @@ class InstallController extends Controller
             $envLines[] = 'DB_DATABASE="' . addslashes($dbDatabaseValue) . '"';
             $envLines[] = 'DB_USERNAME="' . addslashes((string) ($data['db_username'] ?? 'root')) . '"';
             $envLines[] = 'DB_PASSWORD="' . addslashes((string) ($data['db_password'] ?? '')) . '"';
-            $envLines[] = 'DB_SSLMODE=' . $sslMode;
+            $envLines[] = 'DB_SSLMODE=' . ($driver === 'pgsql' && $isRemoteDb ? 'verify-full' : $sslMode);
+            if ($isRemoteDb) {
+                $envLines[] = 'DB_SSLROOTCERT="' . addslashes($sslRootCert) . '"';
+                if ($driver === 'mysql') {
+                    $envLines[] = 'MYSQL_ATTR_SSL_CA="' . addslashes($sslRootCert) . '"';
+                    $envLines[] = 'MYSQL_ATTR_SSL_VERIFY_SERVER_CERT=true';
+                }
+            }
         }
 
         $envLines[] = 'SESSION_DRIVER=database';
@@ -140,7 +161,7 @@ class InstallController extends Controller
             'app.url' => rtrim($data['app_url'], '/'),
             'database.default' => $driver,
             'session.encrypt' => true,
-            'session.secure' => $isHttps,
+            'session.secure' => true,
         ]);
 
         if ($driver === 'sqlite') {
@@ -152,7 +173,9 @@ class InstallController extends Controller
                 "database.connections.{$driver}.database" => $dbDatabaseValue,
                 "database.connections.{$driver}.username" => (string) ($data['db_username'] ?? 'root'),
                 "database.connections.{$driver}.password" => (string) ($data['db_password'] ?? ''),
-                "database.connections.pgsql.sslmode" => $sslMode,
+                "database.connections.pgsql.sslmode" => $driver === 'pgsql' && $isRemoteDb ? 'verify-full' : $sslMode,
+                "database.connections.pgsql.sslrootcert" => $isRemoteDb && $driver === 'pgsql' ? $sslRootCert : null,
+                "database.connections.mysql.options" => $isRemoteDb && $driver === 'mysql' ? [PDO::MYSQL_ATTR_SSL_CA => $sslRootCert, PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT => true] : [],
             ]);
         }
         DB::purge($driver);
