@@ -1004,11 +1004,11 @@ export function createEnterpriseOpsRouter(
       }
     }
 
-    if (item.key === 'gemini_ai') {
-      const apiKey = secrets.apiKey || process.env.GEMINI_API_KEY || '';
+    if (item.key === 'ai_provider') {
+      const apiKey = secrets.apiKey || process.env.AI_API_KEY || '';
       if (!apiKey) {
         item.healthStatus = 'awaiting_configuration';
-        item.lastError = 'GEMINI_API_KEY is not configured.';
+        item.lastError = 'AI_API_KEY is not configured.';
         saveDb(db);
         res.json({ ok: false, integration: item, message: item.lastError });
         return;
@@ -1017,7 +1017,7 @@ export function createEnterpriseOpsRouter(
       item.configured = true;
       item.lastError = undefined;
       saveDb(db);
-      res.json({ ok: true, integration: item, message: 'Gemini AI API key is configured on server.' });
+      res.json({ ok: true, integration: item, message: 'AI provider credentials are configured on the server.' });
       return;
     }
 
