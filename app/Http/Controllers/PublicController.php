@@ -172,7 +172,10 @@ class PublicController extends Controller
     {
         $rawBody = $request->getContent();
         $providedSig = (string) ($request->header('X-Webhook-Signature') ?? $request->input('signature', ''));
-        $secret = (string) (env('PAYMENT_WEBHOOK_SECRET') ?: config('app.key'));
+        $secret = (string) (config('services.payment_webhook_secret') ?: (app()->environment('testing') ? config('app.key') : ''));
+        if ($secret === '') {
+            return response()->json(['error' => 'Payment webhook is not configured. Set PAYMENT_WEBHOOK_SECRET first.'], 503);
+        }
         $expectedSig = hash_hmac('sha256', $rawBody !== '' ? $rawBody : json_encode($request->only(['enrollment_id', 'trx_id', 'amount', 'status'])), $secret);
 
         if ($providedSig === '' || !hash_equals($expectedSig, trim($providedSig))) {
