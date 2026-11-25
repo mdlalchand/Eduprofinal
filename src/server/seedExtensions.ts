@@ -528,7 +528,7 @@ export function createExtendedSeedCollections() {
       active: Boolean(process.env.AI_API_KEY),
       environment: 'production',
       endpointUrl: '/api/ai/chat',
-      apiKeyMasked: process.env.GEMINI_API_KEY ? 'Configured (Env)' : 'Not Configured',
+      apiKeyMasked: process.env.AI_API_KEY ? 'Configured (Env)' : 'Not Configured',
       description: 'Specialist Student, Teacher, Admin, Support, and Learning Plan agents.',
       scopes: ['ai:chat', 'ai:questions'],
     },
