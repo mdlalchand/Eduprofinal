@@ -1,62 +1,44 @@
-name: CI & Release Verification
+name: Laravel 13 Production CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, "conversion/**"]
   pull_request:
     branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  node-and-frontend:
-    name: TypeScript Lint, Unit Tests & Frontend Build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - run: bun install
-      - run: bun run lint
-      - run: bun run build
-      - name: Run unit and integration tests
-        run: bunx tsx --test src/lib/*.test.ts src/server/*.test.ts
-      - name: Build and verify installable Laravel ZIP archive
-        run: |
-          mkdir -p public/downloads
-          rm -f public/downloads/academy-lms-laravel13.zip
-          cd laravel-system
-          zip -qr ../public/downloads/academy-lms-laravel13.zip . \
-            -x '.env' 'vendor/*' 'storage/installed.lock' 'storage/logs/*' 'storage/framework/cache/*' 'storage/framework/sessions/*' 'storage/framework/views/*'
-          cd ..
-          unzip -t public/downloads/academy-lms-laravel13.zip
-          ! unzip -l public/downloads/academy-lms-laravel13.zip | grep -qE '(^|/)(\.env|storage/installed\.lock)'
-      - uses: actions/upload-artifact@v4
-        with:
-          name: academy-lms-laravel13-installer
-          path: public/downloads/academy-lms-laravel13.zip
-          if-no-files-found: error
-          retention-days: 30
-
-  laravel-production-suite:
-    name: Laravel 13 PHP 8.3 Feature & Security Tests
+  laravel-production:
+    name: Laravel 13 PHP 8.3 Tests, Migrations & Installer
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: laravel-system
     steps:
       - uses: actions/checkout@v4
-      - uses: shivammathur/setup-php@v2
+
+      - name: Set up PHP 8.3
+        uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.3'
-          extensions: mbstring, openssl, pdo_sqlite, pdo_mysql, pdo_pgsql, zip, gd, xml, ctype, bcmath
-      - run: composer install --no-interaction --prefer-dist
-      - name: Prepare isolated testing environment
+          php-version: "8.3"
+          coverage: none
+          extensions: mbstring, openssl, pdo_sqlite, pdo_mysql, pdo_pgsql, zip, gd, xml, ctype, bcmath, curl, tokenizer
+
+      - name: Validate PHP syntax
+        run: |
+          find app bootstrap config database routes tests -type f -name '*.php' -print0 | xargs -0 -n1 php -l
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Prepare isolated test environment
         run: |
           cp .env.example .env
           php artisan key:generate
           touch database/database.sqlite
-      - name: Run Laravel database migrations and live HTTP smoke test
-        run: |
           sed -i \
             -e 's/^DB_CONNECTION=.*/DB_CONNECTION=sqlite/' \
             -e "s#^DB_DATABASE=.*#DB_DATABASE=$GITHUB_WORKSPACE/laravel-system/database/database.sqlite#" \
@@ -64,26 +46,46 @@ jobs:
             -e 's/^CACHE_STORE=.*/CACHE_STORE=file/' \
             -e 's/^QUEUE_CONNECTION=.*/QUEUE_CONNECTION=sync/' \
             .env
-          touch database/database.sqlite
-          php artisan migrate --force
+
+      - name: Run migrations
+        run: php artisan migrate --force
+
+      - name: Run Laravel unit and feature tests
+        run: php artisan test --stop-on-failure
+
+      - name: Verify route registration and Laravel boot
+        run: |
+          php artisan route:list --except-vendor
+          php artisan about
+
+      - name: HTTP smoke test for public and role-based routes
+        run: |
           php artisan serve --host=127.0.0.1 --port=8000 > /tmp/edupro-laravel.log 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid" 2>/dev/null || true' EXIT
           for attempt in $(seq 1 30); do
-            if curl --silent --fail http://127.0.0.1:8000/login/student >/dev/null; then
-              break
-            fi
+            if curl --silent --fail http://127.0.0.1:8000/ >/dev/null; then break; fi
             sleep 1
           done
-          curl --fail --silent http://127.0.0.1:8000/login/student >/dev/null
-          curl --fail --silent http://127.0.0.1:8000/register/branch >/dev/null
-          curl --fail --silent http://127.0.0.1:8000/register/student >/dev/null
-          curl --fail --silent http://127.0.0.1:8000/register/guardian >/dev/null
-          curl --fail --silent http://127.0.0.1:8000/register/teacher >/dev/null
-          curl --fail --silent http://127.0.0.1:8000/recover/branch >/dev/null
-          curl --fail --silent http://127.0.0.1:8000/recover/student >/dev/null
-          curl --fail --silent http://127.0.0.1:8000/recover/guardian >/dev/null
-          curl --fail --silent http://127.0.0.1:8000/recover/teacher >/dev/null
-          echo 'Laravel HTTP smoke test passed for all four self-service roles.'
-      - name: Run Laravel Feature & Unit Test Suite
-        run: php artisan test --stop-on-failure
+          for path in / /courses /instructors /products /ebooks /board-result /community /verify-certificate /login/student /login/teacher /login/guardian /login/branch /register/student /register/teacher /register/guardian /register/branch /recover/student /recover/teacher /recover/guardian /recover/branch; do
+            curl --fail --silent "http://127.0.0.1:8000$path" >/dev/null
+          done
+
+      - name: Build Laravel-only installable archive
+        working-directory: .
+        run: |
+          mkdir -p public/downloads
+          rm -f public/downloads/academy-lms-laravel13.zip
+          cd laravel-system
+          zip -qr ../public/downloads/academy-lms-laravel13.zip . \
+            -x '.env' '.env.*' 'vendor/*' 'storage/installed.lock' 'storage/logs/*' 'storage/framework/cache/*' 'storage/framework/sessions/*' 'storage/framework/views/*' 'storage/framework/testing/*'
+          cd ..
+          unzip -t public/downloads/academy-lms-laravel13.zip
+          ! unzip -l public/downloads/academy-lms-laravel13.zip | grep -qE '(^|/)(\.env|storage/installed\.lock)'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: edupro-laravel13-installer
+          path: public/downloads/academy-lms-laravel13.zip
+          if-no-files-found: error
+          retention-days: 30
