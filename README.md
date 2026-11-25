@@ -1,55 +1,71 @@
-# Aloms English Center — White-Label LMS & Academy Platform
+# Edupro LMS — Laravel 13 Production Application
 
-**Primary Production Backend:** **Laravel 13** (`laravel-system/`, PHP 8.3+, SQLite / MySQL / PostgreSQL). All production authentication, authorization, business records, payments, and migrations are owned by Laravel.  
-**Preview & Installer Workspace:** **React 19 + TypeScript + Vite + Express** (development/preview only; not a production system of record).
+**Production application: Laravel 13 only.** The deployable LMS, public website, role-based authentication, dashboards, learning workflows, examinations, store, payments, administration, backups, restore and updater live in `laravel-system/`.
 
----
+The root-level React/TypeScript/Express workspace is a legacy preview/development tool only. It is not a production backend, must not receive production traffic, and is not required to install, run, test or operate the Laravel application.
 
-## Architecture Overview
+## Production architecture
 
-| Layer | Role | Location |
-| --- | --- | --- |
-| **Primary Production Application** | Production web application with `/install` setup wizard, zero-demo-data bootstrap, multi-role `/portal`, signed payment webhooks (`/payments/webhook/{gateway}`), non-destructive `.zip` updater, and SHA-256 full backups | `laravel-system/` |
-| **Preview & Installer Workspace** | UI preview, development-only legacy API sandbox, and installer download delivery. Do not point production clients or payment webhooks at this service. | `src/`, `server.ts`, `db/` |
+| Area | Production owner |
+| --- | --- |
+| Public website and CMS pages | Laravel 13 + Blade |
+| Authentication, registration and recovery | Laravel 13 |
+| Admin, Branch, Teacher, Student and Guardian portals | Laravel 13 |
+| Courses, batches, lessons and enrollment | Laravel 13 |
+| Exams, results and certificates | Laravel 13 |
+| Store, orders and payment verification | Laravel 13 |
+| Database schema and migrations | Laravel 13 |
+| Backup, restore and system updater | Laravel 13 |
+| Sessions, authorization and security | Laravel 13 |
 
-> **Direct Installer Download:** On the live preview homepage (`/`), use the **Download Installable Laravel 13 Package (.zip)** button or request `GET /downloads/academy-lms-laravel13.zip`.
+No production workflow should depend on Node.js, Express, a separate Node database, or a Node API.
 
----
+## Deploy Laravel 13
 
-## Quick Start — Production Deployment (Laravel 13)
+1. Deploy the contents of `laravel-system/` as the application root (not the repository root).
+2. Set the web server document root to `laravel-system/public/`.
+3. Use PHP 8.3+, Composer 2, and the required PHP extensions listed in `laravel-system/README_INSTALL.md`.
+4. Install production dependencies:
 
-1. Download `/downloads/academy-lms-laravel13.zip` (or deploy `laravel-system/`).
-2. Point your web server document root to `public/`.
-3. Install PHP dependencies:
    ```bash
-   composer install --no-dev --optimize-autoloader
+   composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
+   cp .env.example .env
+   php artisan key:generate
    ```
-4. Ensure `storage/` and `bootstrap/cache/` are writable and visit `https://your-domain.com/install`.
-5. Complete the installation wizard:
-   - Generates a cryptographic `APP_KEY` and writes `.env` with `SESSION_ENCRYPT=true`, `SESSION_HTTP_ONLY=true`, and HTTPS-aware `SESSION_SECURE_COOKIE`.
-   - Configures SQLite, MySQL (with `MYSQL_ATTR_SSL_CA` verification), or PostgreSQL (`DB_SSLMODE` + `DB_SSLROOTCERT`).
-   - Runs incremental migrations with zero demo data and locks `/install` via `storage/installed.lock`.
 
-See `laravel-system/README_INSTALL.md` and `DEPLOYMENT.md` for complete deployment and non-destructive upgrade instructions.
+5. Configure the database, verified TLS CA settings where remote DB TLS is used, HTTPS session cookies, mail transport, queue/cache drivers and payment gateway secrets in `.env`.
+6. Ensure `storage/` and `bootstrap/cache/` are writable by the PHP process.
+7. Run `php artisan migrate --force` and visit `/install` for the guided first-time setup if the site has not been installed.
+8. Run the production checks below before opening traffic.
 
----
+Read [Laravel installation guide](laravel-system/README_INSTALL.md) and [deployment guide](laravel-system/DEPLOYMENT.md).
 
-## Quick Start — Preview Workspace (Node.js)
+## Local development
 
-This workspace is for local UI preview, development utilities, and installer delivery only. Production requests, identity, data mutations, payment settlement, and migrations must be served by Laravel. Do not deploy the Express API as the production backend.
+From `laravel-system/`:
 
-1. Install dependencies:
-   ```bash
-   bun install
-   ```
-2. Configure environment variables from `.env.example` (set a 32+ character `SESSION_SECRET` before running with `NODE_ENV=production`, and set `DATABASE_URL` / `PGSSL=verify-full` + `PGSSLROOTCERT` when using managed PostgreSQL).
-3. Run development server:
-   ```bash
-   bun run dev
-   ```
-4. Verify lint, build, and test suite:
-   ```bash
-   bun run lint
-   bun run build
-   bunx tsx --test src/lib/*.test.ts src/server/*.test.ts
-   ```
+```bash
+composer install
+cp .env.example .env
+php artisan key:generate
+touch database/database.sqlite
+php artisan migrate
+php artisan serve
+```
+
+## Verification
+
+From `laravel-system/`:
+
+```bash
+php artisan test --stop-on-failure
+php artisan route:list
+php artisan migrate:status
+php artisan about
+```
+
+GitHub Actions runs the Laravel PHP 8.3 test suite, migration and HTTP smoke checks, PHP syntax validation, and builds an installable Laravel-only ZIP. The archive intentionally excludes `.env`, `vendor/`, logs, runtime caches and the installation lock.
+
+## Legacy workspace
+
+The root `src/`, `server.ts`, `db/` and root Node package are retained temporarily for migration reference and preview only. They are not part of the production release. The Laravel application must remain fully functional when those paths and Node dependencies are absent.
