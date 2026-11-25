@@ -11,6 +11,7 @@ use App\Models\CenterResult;
 use App\Models\Certificate;
 use App\Models\CommunityPost;
 use App\Models\Coupon;
+use App\Models\ContactInquiry;
 use App\Models\Course;
 use App\Models\Ebook;
 use App\Models\Enrollment;
@@ -53,6 +54,9 @@ class PortalController extends Controller
             $enrollments = Enrollment::with(['user', 'course', 'branch'])->latest()->get();
             $orders = Order::with('user')->latest()->get();
             $reviews = Review::latest()->get();
+            $contactInquiries = ContactInquiry::with('branch')->latest()->take(50)->get();
+            $customPagesRaw = DB::table('settings')->where('key', 'custom_pages')->value('value');
+            $customPages = $customPagesRaw ? (json_decode($customPagesRaw, true) ?: []) : [];
             $questionBank = QuestionBankItem::latest()->get();
             $products = Product::latest()->get();
             $ebooks = Ebook::latest()->get();
@@ -81,7 +85,7 @@ class PortalController extends Controller
             $apiConnectors = $connectorsRaw ? (json_decode($connectorsRaw, true) ?? []) : self::defaultApiConnectors();
             return view('portal.index', compact(
                 'user', 'branches', 'courses', 'batches', 'lessons', 'exams', 'users',
-                'enrollments', 'orders', 'reviews', 'heroSlides', 'homepageConfig',
+                'enrollments', 'orders', 'reviews', 'heroSlides', 'homepageConfig', 'contactInquiries', 'customPages',
                 'paymentGateways', 'apiConnectors',
                 'questionBank', 'products', 'ebooks', 'categories', 'posts', 'coupons',
                 'attendance', 'payrolls', 'financialRecords', 'scormPackages', 'backups', 'recycleBin',
@@ -852,10 +856,74 @@ class PortalController extends Controller
 
     public function updateSettings(Request $request)
     {
-        foreach ($request->only(['phone', 'email', 'address']) as $k => $v) {
-            DB::table('settings')->updateOrInsert(['key' => $k], ['value' => $v]);
+        $data = $request->validate([
+            'phone' => 'nullable|string|max:40',
+            'email' => 'nullable|email|max:140',
+            'address' => 'nullable|string|max:240',
+            'about_mission' => 'nullable|string|max:6000',
+            'terms_content' => 'nullable|string|max:12000',
+            'privacy_content' => 'nullable|string|max:12000',
+            'refund_content' => 'nullable|string|max:12000',
+        ]);
+
+        foreach ($data as $key => $value) {
+            DB::table('settings')->updateOrInsert(['key' => $key], ['value' => trim((string) $value)]);
         }
-        return back()->with('status', 'Settings saved.');
+        return back()->with('status', 'Company contact and public page content saved.');
+    }
+
+    public function storeCustomPage(Request $request)
+    {
+        $data = $request->validate([
+            'title' => 'required|string|max:140',
+            'slug' => 'nullable|string|max:100|alpha_dash',
+            'subtitle' => 'nullable|string|max:240',
+            'body' => 'required|string|max:12000',
+            'published' => 'nullable|boolean',
+        ]);
+        $slug = Str::slug($data['slug'] ?: $data['title']);
+        if ($slug === '') {
+            return back()->withErrors(['slug' => 'Enter a valid page title or slug.']);
+        }
+
+        $raw = DB::table('settings')->where('key', 'custom_pages')->value('value');
+        $pages = $raw ? (json_decode($raw, true) ?: []) : [];
+        if (collect($pages)->contains(fn ($page) => is_array($page) && ($page['slug'] ?? '') === $slug)) {
+            return back()->withErrors(['slug' => 'A custom page already uses this URL slug.']);
+        }
+
+        $pages[] = [
+            'id' => (string) Str::uuid(),
+            'title' => $data['title'],
+            'slug' => $slug,
+            'subtitle' => $data['subtitle'] ?? '',
+            'body' => $data['body'],
+            'published' => $request->boolean('published'),
+        ];
+        DB::table('settings')->updateOrInsert(['key' => 'custom_pages'], ['value' => json_encode(array_values($pages), JSON_UNESCAPED_UNICODE)]);
+        return back()->with('status', 'Custom page saved.');
+    }
+
+    public function deleteCustomPage(string $slug)
+    {
+        $raw = DB::table('settings')->where('key', 'custom_pages')->value('value');
+        $pages = $raw ? (json_decode($raw, true) ?: []) : [];
+        $pages = array_values(array_filter($pages, fn ($page) => !is_array($page) || ($page['slug'] ?? '') !== $slug));
+        DB::table('settings')->updateOrInsert(['key' => 'custom_pages'], ['value' => json_encode($pages, JSON_UNESCAPED_UNICODE)]);
+        return back()->with('status', 'Custom page removed.');
+    }
+
+    public function updateContactInquiryStatus(Request $request, ContactInquiry $inquiry)
+    {
+        $data = $request->validate(['status' => 'required|in:pending,contacted']);
+        $inquiry->update($data);
+        return back()->with('status', 'Contact inquiry status updated.');
+    }
+
+    public function deleteContactInquiry(ContactInquiry $inquiry)
+    {
+        $inquiry->delete();
+        return back()->with('status', 'Contact inquiry deleted.');
     }
 
     public function updateHeaderMenu(Request $request)
