@@ -1,48 +1,39 @@
-# Edupro LMS — Laravel 13 Production Application
+# Edupro LMS — Laravel 13
 
-**Production application: Laravel 13 only.** The deployable LMS, public website, role-based authentication, dashboards, learning workflows, examinations, store, payments, administration, backups, restore and updater live in `laravel-system/`.
+**Laravel 13 is the sole application and production runtime.** This repository root is the Laravel project root. There is no Node.js/Express production server, Node database, React build or separate API service.
 
-The root-level React/TypeScript/Express workspace is a legacy preview/development tool only. It is not a production backend, must not receive production traffic, and is not required to install, run, test or operate the Laravel application.
+## Application modules
 
-## Production architecture
+- Public website, course catalogue, instructor directory, community and certificate verification
+- Separate login, registration and recovery flows for Branch, Teacher, Student and Guardian
+- Admin approval and account/role management
+- Course, category, batch, lesson, attendance, enrollment and learning progress
+- Exams, question bank, results and certificates
+- Products, e-books, orders, coupons and payment webhook verification
+- Branch operations, finance, payroll and reports
+- White-label branding and homepage/menu settings
+- Verified backups, restore and non-destructive system updater
 
-| Area | Production owner |
-| --- | --- |
-| Public website and CMS pages | Laravel 13 + Blade |
-| Authentication, registration and recovery | Laravel 13 |
-| Admin, Branch, Teacher, Student and Guardian portals | Laravel 13 |
-| Courses, batches, lessons and enrollment | Laravel 13 |
-| Exams, results and certificates | Laravel 13 |
-| Store, orders and payment verification | Laravel 13 |
-| Database schema and migrations | Laravel 13 |
-| Backup, restore and system updater | Laravel 13 |
-| Sessions, authorization and security | Laravel 13 |
+## Requirements
 
-No production workflow should depend on Node.js, Express, a separate Node database, or a Node API.
+- PHP 8.3+
+- Composer 2
+- SQLite 3, MySQL 8+/MariaDB 10.6+, or PostgreSQL 14+
+- PHP extensions: mbstring, openssl, PDO driver, tokenizer, XML, ctype, JSON, bcmath, curl, zip and GD
 
-## Deploy Laravel 13
+## Install
 
-1. Deploy the contents of `laravel-system/` as the application root (not the repository root).
-2. Set the web server document root to `laravel-system/public/`.
-3. Use PHP 8.3+, Composer 2, and the required PHP extensions listed in `laravel-system/README_INSTALL.md`.
-4. Install production dependencies:
+1. Upload this project and point the web server document root to `public/`.
+2. Run `composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader`.
+3. Copy `.env.example` to `.env`, configure database/mail/payment secrets and set `APP_ENV=production`, `APP_DEBUG=false`, `SESSION_SECURE_COOKIE=true`.
+4. Run `php artisan key:generate`.
+5. Ensure `storage/` and `bootstrap/cache/` are writable by PHP.
+6. Run `php artisan migrate --force` or use the first-install wizard at `/install`.
+7. Visit `/up`, complete the first-install wizard, then create/approve accounts through the admin portal.
 
-   ```bash
-   composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
-   cp .env.example .env
-   php artisan key:generate
-   ```
+See [README_INSTALL.md](README_INSTALL.md), [DEPLOYMENT.md](DEPLOYMENT.md) and [SECURITY.md](SECURITY.md).
 
-5. Configure the database, verified TLS CA settings where remote DB TLS is used, HTTPS session cookies, mail transport, queue/cache drivers and payment gateway secrets in `.env`.
-6. Ensure `storage/` and `bootstrap/cache/` are writable by the PHP process.
-7. Run `php artisan migrate --force` and visit `/install` for the guided first-time setup if the site has not been installed.
-8. Run the production checks below before opening traffic.
-
-Read [Laravel installation guide](laravel-system/README_INSTALL.md) and [deployment guide](laravel-system/DEPLOYMENT.md).
-
-## Local development
-
-From `laravel-system/`:
+## Development and checks
 
 ```bash
 composer install
@@ -50,22 +41,13 @@ cp .env.example .env
 php artisan key:generate
 touch database/database.sqlite
 php artisan migrate
+php artisan test --stop-on-failure
+php artisan route:list
 php artisan serve
 ```
 
-## Verification
+GitHub Actions validates PHP syntax, installs Composer dependencies, runs migrations and all Laravel feature tests, boots the app and smoke-tests public and role-specific routes. It also produces a Laravel-only ZIP installer artifact.
 
-From `laravel-system/`:
+## Data migration note
 
-```bash
-php artisan test --stop-on-failure
-php artisan route:list
-php artisan migrate:status
-php artisan about
-```
-
-GitHub Actions runs the Laravel PHP 8.3 test suite, migration and HTTP smoke checks, PHP syntax validation, and builds an installable Laravel-only ZIP. The archive intentionally excludes `.env`, `vendor/`, logs, runtime caches and the installation lock.
-
-## Legacy workspace
-
-The root `src/`, `server.ts`, `db/` and root Node package are retained temporarily for migration reference and preview only. They are not part of the production release. The Laravel application must remain fully functional when those paths and Node dependencies are absent.
+The previous Node/SQLite application is not used at runtime. If an existing installation contains customer/student records in its old database, export and reconcile those records into the Laravel schema using a reviewed migration/import procedure before switching production traffic. Do not overwrite a live database or assume schemas are interchangeable.

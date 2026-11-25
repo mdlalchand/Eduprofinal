@@ -1,6 +1,0 @@
-{
-  "name": "Aloms English Center LMS",
-  "description": "Multi-branch English learning management system with student, guardian, teacher, and admin portals.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MULTI_ROLE_LMS", "SERVER_CONFIGURED_AI_PROVIDER"]
-}

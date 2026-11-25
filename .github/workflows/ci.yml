@@ -14,9 +14,6 @@ jobs:
   laravel-production:
     name: Laravel 13 PHP 8.3 Tests, Migrations & Installer
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: laravel-system
     steps:
       - uses: actions/checkout@v4
 
@@ -41,7 +38,7 @@ jobs:
           touch database/database.sqlite
           sed -i \
             -e 's/^DB_CONNECTION=.*/DB_CONNECTION=sqlite/' \
-            -e "s#^DB_DATABASE=.*#DB_DATABASE=$GITHUB_WORKSPACE/laravel-system/database/database.sqlite#" \
+            -e "s#^DB_DATABASE=.*#DB_DATABASE=$GITHUB_WORKSPACE/database/database.sqlite#" \
             -e 's/^SESSION_DRIVER=.*/SESSION_DRIVER=file/' \
             -e 's/^CACHE_STORE=.*/CACHE_STORE=file/' \
             -e 's/^QUEUE_CONNECTION=.*/QUEUE_CONNECTION=sync/' \
@@ -72,14 +69,11 @@ jobs:
           done
 
       - name: Build Laravel-only installable archive
-        working-directory: .
         run: |
           mkdir -p public/downloads
           rm -f public/downloads/academy-lms-laravel13.zip
-          cd laravel-system
-          zip -qr ../public/downloads/academy-lms-laravel13.zip . \
-            -x '.env' '.env.*' 'vendor/*' 'storage/installed.lock' 'storage/logs/*' 'storage/framework/cache/*' 'storage/framework/sessions/*' 'storage/framework/views/*' 'storage/framework/testing/*'
-          cd ..
+          zip -qr public/downloads/academy-lms-laravel13.zip . \
+            -x '.env' '.env.*' 'vendor/*' '.git/*' 'storage/installed.lock' 'storage/logs/*' 'storage/framework/cache/*' 'storage/framework/sessions/*' 'storage/framework/views/*' 'storage/framework/testing/*' 'bootstrap/cache/*.php' 'public/downloads/*'
           unzip -t public/downloads/academy-lms-laravel13.zip
           ! unzip -l public/downloads/academy-lms-laravel13.zip | grep -qE '(^|/)(\.env|storage/installed\.lock)'
 
