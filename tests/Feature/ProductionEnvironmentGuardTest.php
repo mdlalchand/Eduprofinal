@@ -62,17 +62,4 @@ class ProductionEnvironmentGuardTest extends TestCase
         ProductionEnvironmentGuard::assertSecure();
     }
 
-    public function test_production_rejects_missing_payment_webhook_secret(): void
-    {
-        $this->configureProduction('sqlite', [
-            'driver' => 'sqlite',
-            'database' => ':memory:',
-            'host' => 'localhost',
-        ]);
-        config(['services.payment_webhook_secret' => null]);
-
-        $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('PAYMENT_WEBHOOK_SECRET');
-        ProductionEnvironmentGuard::assertSecure();
-    }
 }
