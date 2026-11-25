@@ -131,6 +131,10 @@
                             <option value="disable" @selected(old('db_sslmode') === 'disable')>Disable (Local Dev Only)</option>
                         </select>
                     </div>
+                    <div id="db-ca-wrap" class="hidden sm:col-span-3">
+                        <label for="db_sslrootcert" class="block text-xs font-semibold text-slate-700 mb-1">Database CA Certificate Path (required for remote database)</label>
+                        <input id="db_sslrootcert" type="text" name="db_sslrootcert" value="{{ old('db_sslrootcert') }}" placeholder="/etc/ssl/certs/database-ca.pem" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm">
+                    </div>
                 </div>
             </div>
 
@@ -161,7 +165,7 @@
     <script>
         function toggleDbFields(driver) {
             const isSqlServer = driver === 'mysql' || driver === 'pgsql';
-            ['db-host-wrap', 'db-port-wrap', 'db-user-wrap', 'db-pass-wrap', 'db-ssl-wrap'].forEach((id) => {
+            ['db-host-wrap', 'db-port-wrap', 'db-user-wrap', 'db-pass-wrap', 'db-ssl-wrap', 'db-ca-wrap'].forEach((id) => {
                 document.getElementById(id).classList.toggle('hidden', !isSqlServer);
             });
             const dbInput = document.getElementById('db_database');
