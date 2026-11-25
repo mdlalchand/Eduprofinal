@@ -39,6 +39,8 @@
                         ['label' => 'Results', 'path' => route('results'), 'visible' => true],
                         ['label' => 'Certificates', 'path' => route('certificates.verify'), 'visible' => true],
                         ['label' => 'Community', 'path' => route('community'), 'visible' => true],
+                        ['label' => 'About', 'path' => route('about'), 'visible' => true],
+                        ['label' => 'Contact', 'path' => route('contact'), 'visible' => true],
                     ];
                 }
             @endphp
