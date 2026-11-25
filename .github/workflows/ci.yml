@@ -76,7 +76,7 @@ jobs:
             if curl --silent --fail http://127.0.0.1:8000/ >/dev/null; then break; fi
             sleep 1
           done
-          for path in / /about /about-us /contact /contact-us /terms-and-conditions /privacy-policy /refund-policy /courses /instructors /products /ebooks /board-result /community /verify-certificate /verify-certificate/TEST /profile /login/student /login/teacher /login/guardian /login/branch /register/student /register/teacher /register/guardian /register/branch /recover/student /recover/teacher /recover/guardian /recover/branch; do
+          for path in / /about /about-us /contact /contact-us /terms-and-conditions /privacy-policy /refund-policy /courses /instructors /products /ebooks /board-result /community /verify-certificate /verify-certificate/TEST /exams /learn /profile /login/student /login/teacher /login/guardian /login/branch /register/student /register/teacher /register/guardian /register/branch /recover/student /recover/teacher /recover/guardian /recover/branch; do
             curl --fail --silent "http://127.0.0.1:8000$path" >/dev/null
           done
 
@@ -87,6 +87,8 @@ jobs:
           zip -qr public/downloads/academy-lms-laravel13.zip . \
             -x '.env' '.env.local' '.env.production' '.env.staging' 'vendor/*' '.git/*' 'storage/installed.lock' 'storage/logs/*' 'storage/framework/cache/*' 'storage/framework/sessions/*' 'storage/framework/views/*' 'storage/framework/testing/*' 'bootstrap/cache/*.php' 'public/downloads/*'
           unzip -t public/downloads/academy-lms-laravel13.zip
+          unzip -Z1 public/downloads/academy-lms-laravel13.zip | grep -qx '.env.example'
+          ! unzip -Z1 public/downloads/academy-lms-laravel13.zip | grep -qE '(^|/)(package.json|server.ts|src/)'
           ! unzip -l public/downloads/academy-lms-laravel13.zip | grep -qE '(^|/)\.env$|(^|/)storage/installed\.lock$'
 
       - uses: actions/upload-artifact@v4
