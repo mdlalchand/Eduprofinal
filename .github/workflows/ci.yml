@@ -55,5 +55,35 @@ jobs:
           cp .env.example .env
           php artisan key:generate
           touch database/database.sqlite
+      - name: Run Laravel database migrations and live HTTP smoke test
+        run: |
+          sed -i \
+            -e 's/^DB_CONNECTION=.*/DB_CONNECTION=sqlite/' \
+            -e "s#^DB_DATABASE=.*#DB_DATABASE=$GITHUB_WORKSPACE/laravel-system/database/database.sqlite#" \
+            -e 's/^SESSION_DRIVER=.*/SESSION_DRIVER=file/' \
+            -e 's/^CACHE_STORE=.*/CACHE_STORE=file/' \
+            -e 's/^QUEUE_CONNECTION=.*/QUEUE_CONNECTION=sync/' \
+            .env
+          touch database/database.sqlite
+          php artisan migrate --force
+          php artisan serve --host=127.0.0.1 --port=8000 > /tmp/edupro-laravel.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail http://127.0.0.1:8000/login/student >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:8000/login/student >/dev/null
+          curl --fail --silent http://127.0.0.1:8000/register/branch >/dev/null
+          curl --fail --silent http://127.0.0.1:8000/register/student >/dev/null
+          curl --fail --silent http://127.0.0.1:8000/register/guardian >/dev/null
+          curl --fail --silent http://127.0.0.1:8000/register/teacher >/dev/null
+          curl --fail --silent http://127.0.0.1:8000/recover/branch >/dev/null
+          curl --fail --silent http://127.0.0.1:8000/recover/student >/dev/null
+          curl --fail --silent http://127.0.0.1:8000/recover/guardian >/dev/null
+          curl --fail --silent http://127.0.0.1:8000/recover/teacher >/dev/null
+          echo 'Laravel HTTP smoke test passed for all four self-service roles.'
       - name: Run Laravel Feature & Unit Test Suite
         run: php artisan test --stop-on-failure
