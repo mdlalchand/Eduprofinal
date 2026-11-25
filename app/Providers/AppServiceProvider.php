@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Support\BrandSettings;
+use App\Support\ProductionEnvironmentGuard;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 
@@ -37,6 +38,10 @@ class AppServiceProvider extends ServiceProvider
                     'cache.default' => 'file',
                 ]);
             }
+        }
+
+        if (file_exists(storage_path('installed.lock')) && config('app.env') === 'production') {
+            ProductionEnvironmentGuard::assertSecure();
         }
 
         View::composer('*', function ($view) {
