@@ -1,0 +1,15 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Block direct browser access to sensitive Laravel files & folders when uploaded to shared hosting root
+    RewriteRule ^(app|bootstrap|config|database|resources|routes|storage|tests|vendor)/ - [F,L]
+    RewriteRule ^(\.env|\.env\..*|composer\.(json|lock)|phpunit\.xml|artisan|README.*\.md|SECURITY\.md)$ - [F,L]
+
+    # Forward all other requests to public/
+    RewriteCond %{REQUEST_URI} !^/public/
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
+
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>

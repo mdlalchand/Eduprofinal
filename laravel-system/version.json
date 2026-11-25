@@ -1,0 +1,7 @@
+{
+  "name": "Academy LMS White-Label Platform",
+  "version": "1.0.0",
+  "build": "2026.11.25",
+  "channel": "stable",
+  "min_php": "8.3.0"
+}

@@ -1,0 +1,15 @@
+/vendor/
+/storage/*.key
+/storage/installed.lock
+/storage/app/backups/*
+!/storage/app/backups/.gitignore
+/database/*.sqlite
+/database/*.db
+/public/uploads/*
+/public/hot
+.env
+.env.*
+!.env.example
+.phpunit.result.cache
+*.log
+.DS_Store
