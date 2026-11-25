@@ -347,7 +347,7 @@ const BRANCH_QUICK_ACTIONS: QuickActionItem[] = [
   { id: 'manage_enrollments', label: 'Approve Fees', icon: UserCheck, bg: 'from-sky-50 to-blue-100 text-blue-800 border-blue-200' },
   { id: 'create_batch', label: 'New Batch', icon: Layers, bg: 'from-emerald-50 to-teal-100 text-emerald-800 border-emerald-200' },
   { id: 'mark_attendance', label: 'Attendance & P&L', icon: CalendarCheck, bg: 'from-violet-50 to-indigo-100 text-indigo-800 border-indigo-200' },
-  { id: 'add_student', label: 'Add Branch User', icon: UserPlus, bg: 'from-amber-50 to-orange-100 text-orange-800 border-orange-200' },
+  { id: 'my_profile', label: 'Account Profile', icon: UserPlus, bg: 'from-amber-50 to-orange-100 text-orange-800 border-orange-200' },
   { id: 'branch_edit', label: 'Campus & Photo', icon: Building2, bg: 'from-cyan-50 to-sky-100 text-cyan-800 border-cyan-200' },
   { id: 'open_storage', label: 'My Storage', icon: HardDrive, bg: 'from-rose-50 to-orange-100 text-rose-800 border-rose-200' },
 ];
@@ -388,7 +388,9 @@ export function QuickActionsCard({
         ? GUARDIAN_QUICK_ACTIONS
         : role === 'teacher'
           ? TEACHER_QUICK_ACTIONS
-          : ADMIN_QUICK_ACTIONS;
+          : role === 'branch'
+            ? BRANCH_QUICK_ACTIONS
+            : ADMIN_QUICK_ACTIONS;
 
   return (
     <div

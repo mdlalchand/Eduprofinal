@@ -162,7 +162,7 @@ class FullLmsWorkflowTest extends TestCase
         ])->assertRedirect();
         $post = CommunityPost::firstOrFail();
 
-        // 3. Student registers cleanly and gets dynamic Roll Prefix ("NST-YYYY-XXXX")
+        // 3. Student registers cleanly in pending status, then Main Admin approves before login
         $this->post('/logout');
         $this->post(route('register.post'), [
             'name' => 'Samira Patel',
@@ -171,10 +171,20 @@ class FullLmsWorkflowTest extends TestCase
             'role' => 'student',
             'branch_id' => $branch->id,
             'password' => 'StudentPass123!',
-        ])->assertRedirect(route('portal.index'));
+        ])->assertRedirect(route('login', ['role' => 'student']));
 
         $student = User::where('email', 'samira@student.example')->firstOrFail();
+        $this->assertSame('pending', $student->status);
         $this->assertStringStartsWith('NST-' . date('Y') . '-', (string) $student->roll_number);
+
+        $this->post(route('login.post'), [
+            'email' => 'samira@student.example',
+            'password' => 'StudentPass123!',
+            'expected_role' => 'student',
+        ])->assertSessionHasErrors('email');
+
+        $this->actingAs($admin)->post(route('portal.users.approve', $student))->assertRedirect();
+        $this->assertSame('active', $student->fresh()->status);
 
         // 4. Student enrolls (pending until signed webhook confirms payment), completes lesson, submits exam, buys product, claims free ebook, likes community post
         $this->actingAs($student)->post(route('courses.enroll', $course), [

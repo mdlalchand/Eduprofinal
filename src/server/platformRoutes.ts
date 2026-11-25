@@ -1559,6 +1559,9 @@ export function createPlatformRouter(
     db: ReturnType<typeof getDb>,
     actor: StoredUser
   ) => {
+    if (actor.role === 'branch') {
+      return actor.branchId ? db.attendance.filter((a) => a.branchId === actor.branchId) : [];
+    }
     if (actor.role !== 'teacher') return db.attendance;
     const assignedCourseIds = getTeacherAssignedCourseIds(
       actor,
@@ -1582,13 +1585,13 @@ export function createPlatformRouter(
     );
   };
 
-  router.get('/api/portal/attendance', requireAuth, requireRole(['admin', 'teacher']), (req: AuthedRequest, res) => {
+  router.get('/api/portal/attendance', requireAuth, requireRole(['admin', 'teacher', 'branch']), (req: AuthedRequest, res) => {
     const db = getDb();
     const actor = req.authUser!;
     res.json({ attendance: getScopedAttendanceForActor(db, actor) });
   });
 
-  router.post('/api/portal/attendance', requireAuth, requireRole(['admin', 'teacher']), (req: AuthedRequest, res) => {
+  router.post('/api/portal/attendance', requireAuth, requireRole(['admin', 'teacher', 'branch']), (req: AuthedRequest, res) => {
     const { targetType, targetId, branchId, batchId, date, status, checkInTime, checkOutTime, correctionReason } = req.body ?? {};
     const db = getDb();
     const actor = req.authUser!;
@@ -1596,6 +1599,11 @@ export function createPlatformRouter(
     if (!targetUser) return void res.status(404).json({ error: 'Student or staff user not found.' });
 
     const safeTargetType = targetType === 'teacher' || targetType === 'staff' ? targetType : 'student';
+    if (actor.role === 'branch') {
+      if (actor.branchId && targetUser.branchId && targetUser.branchId !== actor.branchId) {
+        return void res.status(403).json({ error: 'Branch isolation: cannot mark attendance for users in another branch.' });
+      }
+    }
     if (actor.role === 'teacher') {
       if (safeTargetType !== 'student' && targetUser.id !== actor.id) {
         return void res.status(403).json({ error: 'Teachers can only record attendance for assigned students or themselves.' });

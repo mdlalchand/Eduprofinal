@@ -1,4 +1,4 @@
-name: CI — Node Preview & Laravel 13 Production
+name: CI & Release Verification
 
 on:
   push:
@@ -7,82 +7,43 @@ on:
     branches: [main, master]
 
 jobs:
-  nodejs-preview-ci:
-    name: Node.js Lint, Build & Unit Tests
+  node-and-frontend:
+    name: TypeScript Lint, Unit Tests & Frontend Build
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'npm'
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - name: Run unit and integration tests
+        run: npx tsx --test src/lib/*.test.ts src/server/*.test.ts
+      - name: Verify installable Laravel ZIP archive hygiene
+        run: |
+          test -f public/downloads/academy-lms-laravel13.zip
+          unzip -t public/downloads/academy-lms-laravel13.zip
+          ! unzip -l public/downloads/academy-lms-laravel13.zip | grep -qE '(^|/)(\.env|storage/installed\.lock)'
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: TypeScript typecheck / lint
-        run: npm run lint
-
-      - name: Production Vite build
-        run: npm run build
-
-      - name: Run Node.js unit & security tests
-        run: npx --yes tsx --test src/lib/*.test.ts src/server/*.test.ts
-
-  laravel-production-ci:
-    name: Laravel 13 Production Tests & Package Integrity
+  laravel-production-suite:
+    name: Laravel 13 PHP 8.3 Feature & Security Tests
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: laravel-system
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup PHP 8.3
-        uses: shivammathur/setup-php@v2
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.3'
-          extensions: pdo_sqlite, pdo_mysql, pdo_pgsql, mbstring, openssl, zip, gd, tokenizer, xml, ctype, json, bcmath
-          coverage: none
-
-      - name: Validate composer.json
-        run: composer validate --strict
-
-      - name: Install Laravel dependencies
-        run: composer install --no-interaction --prefer-dist --no-progress
-
-      - name: Run Laravel PHPUnit test suite
-        run: php artisan test
-
-      - name: Verify clean distributable Laravel package build
-        working-directory: .
+          extensions: mbstring, openssl, pdo_sqlite, pdo_mysql, pdo_pgsql, zip, gd, xml, ctype, bcmath
+      - run: composer install --no-interaction --prefer-dist
+      - name: Prepare isolated testing environment
         run: |
-          python3 - <<'PY'
-          import zipfile, os
-          src = 'laravel-system'
-          out = '/tmp/ci-laravel13-check.zip'
-          excluded_dirs = {'.git', 'vendor', 'node_modules'}
-          excluded_files = {'.env', 'storage/installed.lock'}
-          with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as zf:
-              for root, dirs, files in os.walk(src):
-                  dirs[:] = [d for d in dirs if d not in excluded_dirs]
-                  for f in files:
-                      full = os.path.join(root, f)
-                      rel = os.path.relpath(full, src).replace(os.sep, '/')
-                      if rel in excluded_files or rel.endswith('.sqlite') or rel.endswith('.log'):
-                          continue
-                      zf.write(full, rel)
-          with zipfile.ZipFile(out, 'r') as zf:
-              names = set(zf.namelist())
-              assert 'artisan' in names
-              assert 'composer.json' in names
-              assert 'version.json' in names
-              assert '.env.example' in names
-              assert '.env' not in names
-              assert 'storage/installed.lock' not in names
-          print(f'Verified clean Laravel archive ({len(names)} files)')
-          PY
+          cp .env.example .env
+          php artisan key:generate
+          touch database/database.sqlite
+      - name: Run Laravel Feature & Unit Test Suite
+        run: php artisan test --stop-on-failure

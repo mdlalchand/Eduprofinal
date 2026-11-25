@@ -44,8 +44,8 @@ Once installed on your live domain, future application updates can be applied di
    Alongside any changed `app/`, `resources/`, `routes/`, `config/`, or new incremental `database/migrations/` files.
 
 ## Unified Portal Roles
-- `admin` — Full system, branding, CMS, system updates, courses, batches, users, finance, store, exams & certificates
-- `branch_manager` — Branch-scoped enrollments, fee approvals, orders & students
-- `teacher` — Batches, attendance, lessons & MCQ exam builder
-- `student` — Enrolled courses, video classroom, live MCQ exams, certificates & orders
-- `guardian` — Linked student progress, attendance, exam results & fee status
+- `admin` — Full system, branding, CMS, system updates, account approvals, courses, batches, users, finance, store, exams & certificates
+- `branch` — Branch-scoped admissions, batches, fee approvals, orders & students (self-registered pending Main Admin approval)
+- `teacher` — Batches, attendance, lessons & MCQ exam builder (self-registered pending Main Admin approval)
+- `student` — Enrolled courses, video classroom, live MCQ exams, certificates & orders (self-registered pending Main Admin approval)
+- `guardian` — Linked student progress, attendance, exam results & fee status (self-registered pending Main Admin approval)

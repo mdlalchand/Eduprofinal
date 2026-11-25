@@ -1,11 +1,25 @@
 @php $currency = $brand['currency_symbol'] ?? '$'; @endphp
 
-{{-- Users & Roles Management --}}
+{{-- Users, Approvals & Account Recovery Management --}}
 <div id="users-studio" class="rounded-2xl bg-white border border-slate-200 p-6 space-y-5">
+    @php $pendingUsers = $users->filter(fn ($u) => ($u->status ?? 'active') === 'pending'); @endphp
     <div>
-        <h2 class="text-lg font-extrabold text-slate-900">Users &amp; Role Management ({{ $users->count() }})</h2>
-        <p class="text-xs text-slate-500">Create admins, branch managers, instructors, students, or guardians and manage roles.</p>
+        <h2 class="text-lg font-extrabold text-slate-900">Users, Approvals &amp; Recovery ({{ $users->count() }})</h2>
+        <p class="text-xs text-slate-500">Approve/reject self-registered Branches, Teachers, Students &amp; Guardians, modify account details, and issue recovery tokens.</p>
     </div>
+
+    @if(session('issued_reset_token'))
+        <div class="rounded-xl bg-indigo-50 border border-indigo-200 px-4 py-3 text-xs text-indigo-950 flex flex-wrap items-center justify-between gap-2">
+            <span>Recovery token for <strong>{{ session('issued_reset_email') }}</strong>: <code class="font-mono font-extrabold bg-white px-2 py-0.5 rounded border border-indigo-200">{{ session('issued_reset_token') }}</code></span>
+            <span class="text-[11px] text-indigo-700">Valid for 1 hour on /recover</span>
+        </div>
+    @endif
+
+    @if($pendingUsers->count() > 0)
+        <div class="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-xs text-amber-900 font-bold">
+            {{ $pendingUsers->count() }} registration(s) awaiting Main Admin approval.
+        </div>
+    @endif
 
     <form method="POST" action="{{ route('portal.users.store') }}" class="grid grid-cols-1 md:grid-cols-3 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
         @csrf
@@ -14,10 +28,9 @@
         <input type="text" name="phone" placeholder="Phone Number" class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs">
         <select name="role" required class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold">
             <option value="teacher">Teacher / Instructor</option>
-            <option value="branch_manager">Branch Manager</option>
+            <option value="branch">Branch Campus</option>
             <option value="student">Student</option>
             <option value="guardian">Guardian</option>
-            <option value="admin">Super Admin</option>
         </select>
         <select name="branch_id" class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs">
             <option value="">Online / All Branches</option>
@@ -27,38 +40,80 @@
         </select>
         <input type="password" name="password" required minlength="6" placeholder="Password (6+ chars)" class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs">
         <div class="md:col-span-3">
-            <button type="submit" class="rounded-xl text-white px-5 py-2 text-xs font-bold" style="background-color: var(--brand-accent)">+ Create User</button>
+            <button type="submit" class="rounded-xl text-white px-5 py-2 text-xs font-bold" style="background-color: var(--brand-accent)">+ Create Active User</button>
         </div>
     </form>
 
-    <div class="space-y-2">
+    <div class="space-y-2.5">
         @foreach($users as $u)
-            <div class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-xs">
-                <div>
-                    <strong class="text-slate-900">{{ $u->name }}</strong>
-                    <span class="text-slate-500 ml-1">{{ $u->email }}</span>
-                    @if($u->roll_number)
-                        <span class="ml-1 font-mono text-indigo-700 font-bold">({{ $u->roll_number }})</span>
-                    @endif
-                </div>
-                <div class="flex items-center gap-2">
-                    <form method="POST" action="{{ route('portal.users.role', $u) }}" class="flex items-center gap-1.5">
-                        @csrf @method('PATCH')
-                        <select name="role" class="rounded-lg border border-slate-300 px-2 py-1 text-xs">
-                            @foreach(['admin', 'branch_manager', 'teacher', 'student', 'guardian'] as $r)
-                                <option value="{{ $r }}" @selected($u->role === $r)>{{ strtoupper($r) }}</option>
-                            @endforeach
-                        </select>
-                        <button type="submit" class="rounded-lg border border-slate-300 px-2.5 py-1 font-bold text-slate-700">Save Role</button>
-                    </form>
-                    @if($u->id !== $user->id)
-                        <form method="POST" action="{{ route('portal.users.delete', $u) }}">
-                            @csrf @method('DELETE')
-                            <button type="submit" class="rounded-lg bg-rose-50 text-rose-700 px-2.5 py-1 font-bold">Delete</button>
+            @php $uStatus = $u->status ?? 'active'; @endphp
+            <details class="rounded-xl border {{ $uStatus === 'pending' ? 'border-amber-300 bg-amber-50/30' : 'border-slate-200' }} px-4 py-3 text-xs">
+                <summary class="flex flex-wrap items-center justify-between gap-2 cursor-pointer list-none">
+                    <div>
+                        <strong class="text-slate-900">{{ $u->name }}</strong>
+                        <span class="ml-1.5 uppercase text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700">{{ $u->role }}</span>
+                        <span class="ml-1 uppercase text-[10px] font-bold px-2 py-0.5 rounded {{ $uStatus === 'active' ? 'bg-emerald-100 text-emerald-800' : ($uStatus === 'pending' ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-800') }}">{{ $uStatus }}</span>
+                        <span class="text-slate-500 ml-1">{{ $u->email }}</span>
+                        @if($u->roll_number)
+                            <span class="ml-1 font-mono text-indigo-700 font-bold">({{ $u->roll_number }})</span>
+                        @endif
+                    </div>
+                    <div class="flex flex-wrap items-center gap-1.5">
+                        @if($uStatus !== 'active')
+                            <form method="POST" action="{{ route('portal.users.approve', $u) }}">
+                                @csrf
+                                <button type="submit" class="rounded-lg bg-emerald-600 text-white px-2.5 py-1 font-bold">Approve</button>
+                            </form>
+                        @endif
+                        @if($u->role !== 'admin' && $uStatus !== 'rejected')
+                            <form method="POST" action="{{ route('portal.users.reject', $u) }}">
+                                @csrf
+                                <button type="submit" class="rounded-lg bg-amber-100 text-amber-900 px-2.5 py-1 font-bold">Reject</button>
+                            </form>
+                        @endif
+                        <form method="POST" action="{{ route('portal.users.reset_token', $u) }}">
+                            @csrf
+                            <button type="submit" class="rounded-lg bg-indigo-50 text-indigo-700 px-2.5 py-1 font-bold">Reset Token</button>
                         </form>
-                    @endif
-                </div>
-            </div>
+                        <span class="rounded-lg border border-slate-200 px-2.5 py-1 font-bold text-slate-700">Edit</span>
+                        @if($u->id !== $user->id)
+                            <form method="POST" action="{{ route('portal.users.delete', $u) }}">
+                                @csrf @method('DELETE')
+                                <button type="submit" class="rounded-lg bg-rose-50 text-rose-700 px-2.5 py-1 font-bold">Delete</button>
+                            </form>
+                        @endif
+                    </div>
+                </summary>
+
+                <form method="POST" action="{{ route('portal.users.update', $u) }}" class="mt-3 pt-3 border-t border-slate-100 grid grid-cols-1 md:grid-cols-3 gap-2">
+                    @csrf @method('PATCH')
+                    <input type="text" name="name" required value="{{ $u->name }}" class="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs">
+                    <input type="email" name="email" required value="{{ $u->email }}" class="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs">
+                    <input type="text" name="phone" value="{{ $u->phone }}" placeholder="Phone" class="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs">
+                    <select name="role" class="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs">
+                        @foreach(['admin', 'branch', 'teacher', 'student', 'guardian'] as $r)
+                            <option value="{{ $r }}" @selected($u->role === $r)>{{ strtoupper($r) }}</option>
+                        @endforeach
+                    </select>
+                    <select name="status" class="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs">
+                        @foreach(['pending', 'active', 'suspended', 'rejected'] as $st)
+                            <option value="{{ $st }}" @selected($uStatus === $st)>{{ strtoupper($st) }}</option>
+                        @endforeach
+                    </select>
+                    <select name="branch_id" class="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs">
+                        <option value="">Online / All Branches</option>
+                        @foreach($branches as $b)
+                            <option value="{{ $b->id }}" @selected($u->branch_id === $b->id)>{{ $b->name }}</option>
+                        @endforeach
+                    </select>
+                    <input type="text" name="subject_specialty" value="{{ $u->subject_specialty }}" placeholder="Subject Specialty" class="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs">
+                    <input type="text" name="education" value="{{ $u->education }}" placeholder="Education / Credentials" class="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs">
+                    <input type="password" name="password" minlength="6" placeholder="New Password (optional)" class="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs">
+                    <div class="md:col-span-3">
+                        <button type="submit" class="rounded-lg text-white px-4 py-1.5 text-xs font-bold" style="background-color: var(--brand-primary)">Save Account Changes</button>
+                    </div>
+                </form>
+            </details>
         @endforeach
     </div>
 </div>

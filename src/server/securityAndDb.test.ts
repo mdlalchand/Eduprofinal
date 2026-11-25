@@ -16,6 +16,8 @@ import {
   checkLoginRateLimit,
   clearLoginRateLimit,
   closeSqliteDb,
+  consumePasswordResetToken,
+  createPasswordResetToken,
   createSessionRecord,
   findValidSessionByToken,
   getSqliteDb,
@@ -63,8 +65,9 @@ after(() => {
 });
 
 describe('EDUPro Security, RBAC, DB Constraints & Payments', () => {
-  test('only allows the 4 authorized roles and blocks legacy/escalation roles', () => {
+  test('only allows the 5 authorized roles and blocks legacy/escalation roles', () => {
     assert.equal(isValidRole('admin'), true);
+    assert.equal(isValidRole('branch'), true);
     assert.equal(isValidRole('teacher'), true);
     assert.equal(isValidRole('student'), true);
     assert.equal(isValidRole('guardian'), true);
@@ -183,6 +186,12 @@ describe('EDUPro Security, RBAC, DB Constraints & Payments', () => {
     const revokedCount = revokeAllUserSessions(student.id);
     assert.ok(revokedCount >= 1);
     assert.equal(findValidSessionByToken(token), null);
+
+    // One-time password recovery token creation and single-use consumption
+    const resetToken = createPasswordResetToken(student.id);
+    assert.ok(resetToken.length >= 20);
+    assert.equal(consumePasswordResetToken(resetToken), student.id);
+    assert.equal(consumePasswordResetToken(resetToken), null);
   });
 
   test('login rate limiter locks out after 5 failures and clears on reset', () => {

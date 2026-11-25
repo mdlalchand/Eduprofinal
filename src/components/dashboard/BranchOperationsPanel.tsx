@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import type { Branch, BranchStatus, BranchStatusHistoryEntry } from '../../types';
+import type { Branch, BranchStatus, BranchStatusHistoryEntry, UserRole } from '../../types';
 import { ImageUploadField } from '../ImageUploadField';
 
 interface BranchStatRow {
@@ -41,6 +41,7 @@ interface BranchAnalyticsPayload {
 }
 
 interface BranchOperationsPanelProps {
+  role?: UserRole;
   branches: Branch[];
   darkMode?: boolean;
   onRefresh: () => Promise<void>;
@@ -55,12 +56,14 @@ const STATUS_BADGE: Record<BranchStatus, { label: string; cls: string }> = {
 };
 
 export function BranchOperationsPanel({
+  role = 'admin',
   branches: fallbackBranches,
   darkMode = false,
   onRefresh,
   onNotify,
 }: BranchOperationsPanelProps) {
   const { apiFetch, token } = useAuth();
+  const isMainAdmin = role === 'admin';
   const [analytics, setAnalytics] = useState<BranchAnalyticsPayload | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | BranchStatus>('all');
   const [loading, setLoading] = useState(false);
@@ -304,33 +307,36 @@ export function BranchOperationsPanel({
         </div>
       </div>
 
-      {/* Create / Edit Campus Form (Main Admin Only) */}
-      <form
-        onSubmit={handleSaveBranch}
-        className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-xs"
-      >
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h2 className="flex items-center gap-2 text-lg font-extrabold text-slate-900">
-              <Building2 className="h-5 w-5 text-indigo-600" />
-              <span>
-                {editingBranchId ? 'Edit Campus Branch' : 'Create New Campus Branch'}
-              </span>
-            </h2>
-            <p className="text-xs text-slate-500">
-              Branches are operational management units controlled solely by the Main Admin.
-            </p>
+      {/* Create / Edit Campus Form (Main Admin Create/Edit, Branch Self-Edit when editing) */}
+      {(isMainAdmin || editingBranchId) && (
+        <form
+          onSubmit={handleSaveBranch}
+          className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-xs"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="flex items-center gap-2 text-lg font-extrabold text-slate-900">
+                <Building2 className="h-5 w-5 text-indigo-600" />
+                <span>
+                  {editingBranchId ? 'Edit Campus Branch' : 'Create New Campus Branch'}
+                </span>
+              </h2>
+              <p className="text-xs text-slate-500">
+                {isMainAdmin
+                  ? 'Branches are operational campuses managed and governed by the Main Admin.'
+                  : 'Update your assigned campus contact info, coordinator profile, and photo.'}
+              </p>
+            </div>
+            {editingBranchId && (
+              <button
+                type="button"
+                onClick={resetForm}
+                className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-bold text-slate-600 hover:bg-slate-50"
+              >
+                Cancel Edit
+              </button>
+            )}
           </div>
-          {editingBranchId && (
-            <button
-              type="button"
-              onClick={resetForm}
-              className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-bold text-slate-600 hover:bg-slate-50"
-            >
-              Cancel Edit
-            </button>
-          )}
-        </div>
 
         {brError && (
           <p className="rounded-xl bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
@@ -424,8 +430,9 @@ export function BranchOperationsPanel({
             <select
               aria-label="Branch status"
               value={brStatus}
+              disabled={!isMainAdmin}
               onChange={(e) => setBrStatus(e.target.value as BranchStatus)}
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900"
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900 disabled:opacity-60"
             >
               <option value="active">Status: Active</option>
               <option value="inactive">Status: Inactive</option>
@@ -443,6 +450,7 @@ export function BranchOperationsPanel({
           {saving ? 'Saving...' : editingBranchId ? 'Update Campus Branch' : 'Create Branch'}
         </button>
       </form>
+      )}
 
       {/* Filter Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -614,7 +622,8 @@ export function BranchOperationsPanel({
                 </div>
 
                 <div className="space-y-2 border-t border-slate-100 pt-3">
-                  {/* 4-State Lifecycle Controls */}
+                  {/* 4-State Lifecycle Controls (Main Admin Only) */}
+                  {isMainAdmin && (
                   <div className="flex flex-wrap gap-1.5">
                     {b.status !== 'active' && (
                       <button
@@ -673,6 +682,7 @@ export function BranchOperationsPanel({
                       </button>
                     )}
                   </div>
+                  )}
 
                   {/* Edit, CSV Export, Delete */}
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -691,20 +701,22 @@ export function BranchOperationsPanel({
                         className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
                       >
                         <Pencil className="h-3.5 w-3.5" />
-                        <span>Edit</span>
+                        <span>{isMainAdmin ? 'Edit' : 'Edit Campus Profile'}</span>
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleDeleteBranch(b)}
-                        className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-bold ${
-                          confirming
-                            ? 'bg-rose-600 text-white'
-                            : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
-                        }`}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        <span>{confirming ? 'Confirm' : 'Delete'}</span>
-                      </button>
+                      {isMainAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteBranch(b)}
+                          className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-bold ${
+                            confirming
+                              ? 'bg-rose-600 text-white'
+                              : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
+                          }`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          <span>{confirming ? 'Confirm' : 'Delete'}</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>

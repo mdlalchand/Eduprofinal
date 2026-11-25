@@ -57,7 +57,7 @@ class BatchManagementService
     {
         $query = Batch::with(['course', 'branch', 'mainTeacher', 'assistantTeacher', 'teachers.user', 'schedules', 'classroom']);
 
-        if ($actor && $actor->role === 'branch_manager' && $actor->branch_id) {
+        if ($actor && $actor->role === 'branch' && $actor->branch_id) {
             $query->where('branch_id', $actor->branch_id);
         } elseif ($actor && $actor->role === 'teacher') {
             $query->where(function ($q) use ($actor) {

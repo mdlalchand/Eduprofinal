@@ -231,6 +231,7 @@ const ROLE_LABELS: Record<UserRole, string> = {
   teacher: 'Instructor',
   student: 'Student',
   guardian: 'Guardian',
+  branch: 'Branch',
 };
 
 export function PortalPage({ navigate }: PortalPageProps) {
@@ -366,7 +367,7 @@ export function PortalPage({ navigate }: PortalPageProps) {
             Authentication Required
           </h1>
           <p className="mt-2 text-xs leading-relaxed text-slate-300">
-            Sign in with your verified Main Admin, Teacher, Student, or Guardian credentials to access the EDUPro portal.
+            Sign in with your verified Main Admin, Branch, Teacher, Student, or Guardian credentials to access the EDUPro portal.
           </p>
 
           <div className="mt-6 flex items-center justify-center gap-3 border-t border-[#2F3B4D] pt-5">
@@ -1548,17 +1549,19 @@ export function PortalPage({ navigate }: PortalPageProps) {
                             <ExternalLink className="h-3.5 w-3.5" />
                             <span>Open /learn Classroom</span>
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingLesson(null);
-                              setLessonModalOpen(true);
-                            }}
-                            className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-indigo-700"
-                          >
-                            <Plus className="h-4 w-4" />
-                            <span>Add Lecture / Live / Video</span>
-                          </button>
+                          {(user.role === 'admin' || user.role === 'teacher') && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingLesson(null);
+                                setLessonModalOpen(true);
+                              }}
+                              className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-indigo-700"
+                            >
+                              <Plus className="h-4 w-4" />
+                              <span>Add Lecture / Live / Video</span>
+                            </button>
+                          )}
                         </div>
                       </div>
 
@@ -1709,6 +1712,7 @@ export function PortalPage({ navigate }: PortalPageProps) {
                                   </p>
                                 </div>
 
+                                {(user.role === 'admin' || user.role === 'teacher') && (
                                 <div className="flex flex-wrap items-center gap-1.5">
                                   {lType === 'live' && (
                                     <button
@@ -1789,6 +1793,7 @@ export function PortalPage({ navigate }: PortalPageProps) {
                                     {isConfirming && <span>Confirm</span>}
                                   </button>
                                 </div>
+                                )}
                               </div>
                             );
                           })
@@ -2080,17 +2085,20 @@ export function PortalPage({ navigate }: PortalPageProps) {
                 />
               )}
 
-              {/* BRANCHES (MAIN ADMIN 4-STATUS GOVERNANCE, KPI ANALYTICS & AUDIT LOGS) */}
-              {currentSection === 'branches' && user.role === 'admin' && data && (
-                <BranchOperationsPanel
-                  branches={data.branches ?? bootstrap?.branches ?? []}
-                  darkMode={darkMode}
-                  onRefresh={async () => {
-                    await Promise.all([loadPortal(), refreshBootstrap()]);
-                  }}
-                  onNotify={notify}
-                />
-              )}
+              {/* BRANCHES (MAIN ADMIN 4-STATUS GOVERNANCE & BRANCH SELF-CAMPUS PROFILE) */}
+              {currentSection === 'branches' &&
+                (user.role === 'admin' || user.role === 'branch') &&
+                data && (
+                  <BranchOperationsPanel
+                    role={user.role}
+                    branches={data.branches ?? bootstrap?.branches ?? []}
+                    darkMode={darkMode}
+                    onRefresh={async () => {
+                      await Promise.all([loadPortal(), refreshBootstrap()]);
+                    }}
+                    onNotify={notify}
+                  />
+                )}
 
               {/* ACADEMIC CORE STRUCTURE & ADMISSIONS */}
               {currentSection === 'academic_ops' && data && (

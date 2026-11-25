@@ -13,18 +13,21 @@ import { calculateStudentProgress } from './domain';
 export interface UserDirectoryFilters {
   role: 'all' | UserRole;
   branchId: string;
-  status: 'all' | 'active' | 'suspended';
+  status: 'all' | 'pending' | 'active' | 'suspended' | 'rejected';
   search: string;
 }
 
 export interface UserRoleSummary {
   total: number;
+  pending: number;
   active: number;
   suspended: number;
+  rejected: number;
   admin: number;
   teacher: number;
   student: number;
   guardian: number;
+  branch: number;
 }
 
 export function filterUsersDirectory(users: User[], filters: UserDirectoryFilters): User[] {
@@ -40,7 +43,8 @@ export function filterUsersDirectory(users: User[], filters: UserDirectoryFilter
       u.email.toLowerCase().includes(q) ||
       (u.phone ?? '').toLowerCase().includes(q) ||
       (u.rollNumber ?? '').toLowerCase().includes(q) ||
-      (u.subjectSpecialty ?? '').toLowerCase().includes(q)
+      (u.subjectSpecialty ?? '').toLowerCase().includes(q) ||
+      (u.education ?? '').toLowerCase().includes(q)
     );
   });
 }
@@ -48,20 +52,34 @@ export function filterUsersDirectory(users: User[], filters: UserDirectoryFilter
 export function computeUserRoleSummary(users: User[]): UserRoleSummary {
   const summary: UserRoleSummary = {
     total: users.length,
+    pending: 0,
     active: 0,
     suspended: 0,
+    rejected: 0,
     admin: 0,
     teacher: 0,
     student: 0,
     guardian: 0,
+    branch: 0,
   };
   for (const u of users) {
-    if ((u.status ?? 'active') === 'suspended') {
+    const status = u.status ?? 'active';
+    if (status === 'pending') {
+      summary.pending += 1;
+    } else if (status === 'suspended') {
       summary.suspended += 1;
+    } else if (status === 'rejected') {
+      summary.rejected += 1;
     } else {
       summary.active += 1;
     }
-    if (u.role === 'admin' || u.role === 'teacher' || u.role === 'student' || u.role === 'guardian') {
+    if (
+      u.role === 'admin' ||
+      u.role === 'teacher' ||
+      u.role === 'student' ||
+      u.role === 'guardian' ||
+      u.role === 'branch'
+    ) {
       summary[u.role] += 1;
     }
   }

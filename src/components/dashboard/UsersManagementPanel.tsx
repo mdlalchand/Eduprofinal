@@ -47,6 +47,7 @@ const ROLE_LABELS: Record<UserRole, string> = {
   teacher: 'Teacher',
   student: 'Student',
   guardian: 'Guardian',
+  branch: 'Branch',
 };
 
 const ROLE_BADGE_COLORS: Record<UserRole, string> = {
@@ -54,6 +55,7 @@ const ROLE_BADGE_COLORS: Record<UserRole, string> = {
   teacher: 'bg-emerald-100 text-emerald-800 border-emerald-200',
   student: 'bg-blue-50 text-blue-700 border-blue-200',
   guardian: 'bg-amber-100 text-amber-800 border-amber-200',
+  branch: 'bg-purple-100 text-purple-800 border-purple-200',
 };
 
 interface UserDetailsPayload {
@@ -79,7 +81,9 @@ export function UsersManagementPanel({
 
   const [roleFilter, setRoleFilter] = useState<'all' | UserRole>('all');
   const [branchFilter, setBranchFilter] = useState<string>('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'suspended'>('all');
+  const [statusFilter, setStatusFilter] = useState<
+    'all' | 'pending' | 'active' | 'suspended' | 'rejected'
+  >('all');
   const [search, setSearch] = useState('');
 
   // Create / Edit modal state
@@ -93,14 +97,30 @@ export function UsersManagementPanel({
     currentUser.branchId || branches[0]?.id || 'br-mirpur'
   );
   const [formRollNumber, setFormRollNumber] = useState('');
-  const [formStatus, setFormStatus] = useState<'active' | 'suspended'>('active');
+  const [formStatus, setFormStatus] = useState<'pending' | 'active' | 'suspended' | 'rejected'>(
+    'active'
+  );
   const [formSpecialty, setFormSpecialty] = useState('');
+  const [formEducation, setFormEducation] = useState('');
+  const [formApprovalNote, setFormApprovalNote] = useState('');
+  const [formBranchName, setFormBranchName] = useState('');
+  const [formBranchCode, setFormBranchCode] = useState('');
+  const [formBranchCity, setFormBranchCity] = useState('');
+  const [formBranchAddress, setFormBranchAddress] = useState('');
   const [formAvatar, setFormAvatar] = useState('');
   const [formBio, setFormBio] = useState('');
   const [formPassword, setFormPassword] = useState('');
   const [formLinkedStudents, setFormLinkedStudents] = useState<string[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // Admin password reset token banner state
+  const [issuedResetToken, setIssuedResetToken] = useState<{
+    name: string;
+    email: string;
+    token: string;
+    expiresAt: string;
+  } | null>(null);
 
   // 360 Inspector modal state
   const [inspectData, setInspectData] = useState<UserDetailsPayload | null>(null);
@@ -130,15 +150,24 @@ export function UsersManagementPanel({
   );
 
   const openCreateModal = (presetRole?: UserRole) => {
+    const resolvedRole = presetRole || defaultCreateRole;
     setEditingUser(null);
     setFormName('');
     setFormEmail('');
     setFormPhone('');
-    setFormRole(presetRole || defaultCreateRole);
-    setFormBranchId(currentUser.branchId || branches[0]?.id || 'br-mirpur');
+    setFormRole(resolvedRole);
+    setFormBranchId(
+      resolvedRole === 'branch' ? '' : currentUser.branchId || branches[0]?.id || 'br-mirpur'
+    );
     setFormRollNumber('');
     setFormStatus('active');
     setFormSpecialty('');
+    setFormEducation('');
+    setFormApprovalNote('');
+    setFormBranchName('');
+    setFormBranchCode('');
+    setFormBranchCity('');
+    setFormBranchAddress('');
     setFormAvatar('');
     setFormBio('');
     setFormPassword('');
@@ -153,10 +182,17 @@ export function UsersManagementPanel({
     setFormEmail(u.email);
     setFormPhone(u.phone || '');
     setFormRole(u.role);
-    setFormBranchId(u.branchId || branches[0]?.id || '');
+    setFormBranchId(u.branchId || '');
     setFormRollNumber(u.rollNumber || '');
     setFormStatus(u.status ?? 'active');
     setFormSpecialty(u.subjectSpecialty || '');
+    setFormEducation(u.education || '');
+    setFormApprovalNote(u.approvalNote || '');
+    const linkedBr = u.branchId ? branches.find((b) => b.id === u.branchId) : undefined;
+    setFormBranchName(linkedBr?.name || '');
+    setFormBranchCode(linkedBr?.code || '');
+    setFormBranchCity(linkedBr?.city || '');
+    setFormBranchAddress(linkedBr?.address || '');
     setFormAvatar(u.avatar || '');
     setFormBio(u.bio || '');
     setFormPassword('');
@@ -179,10 +215,18 @@ export function UsersManagementPanel({
         status: formStatus,
         rollNumber: formRole === 'student' ? formRollNumber.trim() || undefined : undefined,
         subjectSpecialty: formSpecialty.trim() || undefined,
+        education: formEducation.trim() || undefined,
+        approvalNote: formApprovalNote.trim() || undefined,
         avatar: formAvatar.trim(),
         bio: formBio.trim() || undefined,
         guardianLinkedStudentIds: formRole === 'guardian' ? formLinkedStudents : undefined,
       };
+      if (formRole === 'branch' && !formBranchId) {
+        payload.branchName = formBranchName.trim() || undefined;
+        payload.branchCode = formBranchCode.trim() || undefined;
+        payload.branchCity = formBranchCity.trim() || undefined;
+        payload.branchAddress = formBranchAddress.trim() || undefined;
+      }
       if (!editingUser && !formPassword.trim()) {
         setFormError('Strong initial password (min 8 chars, letters and numbers) is required.');
         setSaving(false);
@@ -216,6 +260,55 @@ export function UsersManagementPanel({
       setFormError(err instanceof Error ? err.message : 'Failed to save user.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleApproveUser = async (u: User) => {
+    try {
+      await apiFetch(`/api/portal/users/${u.id}/approve`, {
+        method: 'POST',
+        body: JSON.stringify({ approvalNote: 'Approved by Main Admin' }),
+      });
+      await onRefresh();
+      onNotify(`Approved ${ROLE_LABELS[u.role]} account for ${u.name}.`);
+    } catch (err) {
+      onNotify(err instanceof Error ? err.message : 'Could not approve user.');
+    }
+  };
+
+  const handleRejectUser = async (u: User) => {
+    try {
+      await apiFetch(`/api/portal/users/${u.id}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ approvalNote: 'Rejected by Main Admin' }),
+      });
+      await onRefresh();
+      onNotify(`Marked ${u.name} as rejected.`);
+    } catch (err) {
+      onNotify(err instanceof Error ? err.message : 'Could not reject user.');
+    }
+  };
+
+  const handleIssueResetToken = async (u: User) => {
+    try {
+      const res = await apiFetch<{
+        ok: boolean;
+        email: string;
+        resetToken: string;
+        expiresAt: string;
+      }>(`/api/portal/users/${u.id}/issue-reset-token`, {
+        method: 'POST',
+      });
+      setIssuedResetToken({
+        name: u.name,
+        email: res.email,
+        token: res.resetToken,
+        expiresAt: res.expiresAt,
+      });
+      await onRefresh();
+      onNotify(`Issued recovery reset token for ${u.email}.`);
+    } catch (err) {
+      onNotify(err instanceof Error ? err.message : 'Could not issue recovery token.');
     }
   };
 
@@ -278,29 +371,97 @@ export function UsersManagementPanel({
 
   return (
     <div className="space-y-6">
+      {/* Pending Admin Approval Alert Banner */}
+      {summary.pending > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-amber-300 bg-amber-50 px-5 py-3.5 text-amber-950 shadow-xs">
+          <div className="flex items-center gap-2.5 text-xs">
+            <ShieldAlert className="h-5 w-5 shrink-0 text-amber-600" />
+            <div>
+              <p className="font-extrabold">
+                {summary.pending} Registration Request{summary.pending > 1 ? 's' : ''} Waiting for Main Admin Approval
+              </p>
+              <p className="text-[11px] text-amber-800">
+                Review Student, Guardian, Teacher, or Branch sign-ups before granting portal login access.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setRoleFilter('all');
+              setStatusFilter('pending');
+            }}
+            className="rounded-xl bg-amber-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-amber-700"
+          >
+            Review Pending ({summary.pending})
+          </button>
+        </div>
+      )}
+
+      {/* Admin-Issued Password Recovery Token Banner */}
+      {issuedResetToken && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-indigo-200 bg-indigo-50 px-5 py-3.5 text-xs text-indigo-950">
+          <div>
+            <p className="font-extrabold">
+              Recovery Reset Token Generated for {issuedResetToken.name} ({issuedResetToken.email})
+            </p>
+            <p className="mt-0.5 text-[11px] text-indigo-800">
+              Share this 1-hour recovery code for the /recover portal:{' '}
+              <code className="font-mono-tabular rounded bg-white px-2 py-0.5 font-extrabold text-indigo-900 border border-indigo-200">
+                {issuedResetToken.token}
+              </code>
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIssuedResetToken(null)}
+            className="rounded-lg border border-indigo-200 bg-white px-2.5 py-1 font-bold text-indigo-700 hover:bg-indigo-100"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Role Summary Strip */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
         {[
           { key: 'all' as const, label: 'All Users', count: summary.total, tone: 'bg-slate-900 text-white' },
           { key: 'student' as const, label: 'Students', count: summary.student, tone: 'bg-blue-50 text-blue-800 border-blue-200' },
           { key: 'teacher' as const, label: 'Teachers', count: summary.teacher, tone: 'bg-emerald-50 text-emerald-800 border-emerald-200' },
           { key: 'guardian' as const, label: 'Guardians', count: summary.guardian, tone: 'bg-amber-50 text-amber-800 border-amber-200' },
+          { key: 'branch' as const, label: 'Branches', count: summary.branch, tone: 'bg-purple-50 text-purple-800 border-purple-200' },
           { key: 'admin' as const, label: 'Main Admin', count: summary.admin, tone: 'bg-indigo-50 text-indigo-800 border-indigo-200' },
         ].map((item) => (
           <button
             key={item.key}
             type="button"
-            onClick={() => setRoleFilter(item.key)}
+            onClick={() => {
+              setRoleFilter(item.key);
+              if (statusFilter === 'pending') setStatusFilter('all');
+            }}
             className={`rounded-2xl border p-3.5 text-left transition-all ${
-              roleFilter === item.key
+              roleFilter === item.key && statusFilter !== 'pending'
                 ? 'ring-2 ring-blue-500 shadow-sm'
                 : 'opacity-90 hover:opacity-100'
-            } ${item.key === 'all' ? item.tone : `${item.tone}`}`}
+            } ${item.tone}`}
           >
             <p className="text-[11px] font-bold uppercase tracking-wider opacity-80">{item.label}</p>
             <p className="font-mono-tabular mt-1 text-2xl font-extrabold">{item.count}</p>
           </button>
         ))}
+        <button
+          type="button"
+          onClick={() => {
+            setRoleFilter('all');
+            setStatusFilter((prev) => (prev === 'pending' ? 'all' : 'pending'));
+          }}
+          className={`rounded-2xl border border-amber-300 bg-amber-100/80 p-3.5 text-left text-amber-950 transition-all ${
+            statusFilter === 'pending' ? 'ring-2 ring-amber-500 shadow-sm' : 'opacity-90 hover:opacity-100'
+          }`}
+        >
+          <p className="text-[11px] font-bold uppercase tracking-wider opacity-80">Pending</p>
+          <p className="font-mono-tabular mt-1 text-2xl font-extrabold">{summary.pending}</p>
+        </button>
       </div>
 
       {/* Directory Container */}
@@ -312,7 +473,7 @@ export function UsersManagementPanel({
               <span>Users, Faculty &amp; Role Access Control ({filteredUsers.length})</span>
             </h2>
             <p className="mt-0.5 text-xs opacity-70">
-              {summary.active} Active · {summary.suspended} Suspended · Full profile editing, password resets, guardian linking &amp; 360° activity inspection
+              {summary.active} Active · {summary.pending} Pending · {summary.suspended} Suspended · {summary.rejected} Rejected · Approve registrations, issue reset tokens &amp; manage roles
             </p>
           </div>
 
@@ -324,6 +485,14 @@ export function UsersManagementPanel({
             >
               <Download className="h-3.5 w-3.5" />
               <span>Export CSV</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => openCreateModal('branch')}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-purple-200 bg-purple-50 px-3.5 py-2 text-xs font-bold text-purple-800 hover:bg-purple-100"
+            >
+              <UserCheck className="h-3.5 w-3.5" />
+              <span>Add Branch</span>
             </button>
             <button
               type="button"
@@ -367,6 +536,7 @@ export function UsersManagementPanel({
             <option value="student">Students</option>
             <option value="teacher">Teachers</option>
             <option value="guardian">Guardians</option>
+            <option value="branch">Branches</option>
             <option value="admin">Main Admin</option>
           </select>
           <select
@@ -384,13 +554,19 @@ export function UsersManagementPanel({
           </select>
           <select
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'suspended')}
+            onChange={(e) =>
+              setStatusFilter(
+                e.target.value as 'all' | 'pending' | 'active' | 'suspended' | 'rejected'
+              )
+            }
             aria-label="Filter users by status"
             className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-900 sm:col-span-2"
           >
             <option value="all">All Statuses</option>
+            <option value="pending">Pending Approval</option>
             <option value="active">Active Only</option>
             <option value="suspended">Suspended Only</option>
+            <option value="rejected">Rejected Only</option>
           </select>
         </div>
 
@@ -471,7 +647,9 @@ export function UsersManagementPanel({
                           className={`inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[11px] font-bold uppercase ${
                             status === 'active'
                               ? 'bg-emerald-50 text-emerald-700'
-                              : 'bg-rose-50 text-rose-700'
+                              : status === 'pending'
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-rose-50 text-rose-700'
                           }`}
                         >
                           {status === 'active' ? (
@@ -495,6 +673,27 @@ export function UsersManagementPanel({
                           </button>
                           {canEditTarget && (
                             <>
+                              {!isSelf && status === 'pending' && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleApproveUser(u)}
+                                    aria-label={`Approve ${u.name}`}
+                                    className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-emerald-700"
+                                  >
+                                    <CheckCircle2 className="h-3.5 w-3.5" />
+                                    <span>Approve</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleRejectUser(u)}
+                                    aria-label={`Reject ${u.name}`}
+                                    className="rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-bold text-rose-700 hover:bg-rose-100"
+                                  >
+                                    Reject
+                                  </button>
+                                </>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => openEditModal(u)}
@@ -504,7 +703,17 @@ export function UsersManagementPanel({
                                 <Pencil className="h-3.5 w-3.5" />
                                 <span>Edit</span>
                               </button>
-                              {!isSelf && (
+                              <button
+                                type="button"
+                                onClick={() => void handleIssueResetToken(u)}
+                                aria-label={`Reset Token ${u.name}`}
+                                title="Issue 1-hour account recovery token"
+                                className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-bold text-indigo-700 hover:bg-indigo-100"
+                              >
+                                <KeyRound className="h-3.5 w-3.5" />
+                                <span>Reset Token</span>
+                              </button>
+                              {!isSelf && status !== 'pending' && (
                                 <button
                                   type="button"
                                   onClick={() => void handleToggleStatus(u)}
@@ -637,6 +846,8 @@ export function UsersManagementPanel({
                   <option value="student">Student</option>
                   <option value="teacher">Teacher</option>
                   <option value="guardian">Guardian</option>
+                  <option value="branch">Branch</option>
+                  {editingUser?.role === 'admin' && <option value="admin">Main Admin</option>}
                 </select>
               </div>
               <div>
@@ -650,7 +861,9 @@ export function UsersManagementPanel({
                   onChange={(e) => setFormBranchId(e.target.value)}
                   className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm disabled:opacity-60"
                 >
-                  <option value="">Global / Online Only</option>
+                  <option value="">
+                    {formRole === 'branch' ? 'Auto-Create New Branch Campus' : 'Global / Online Only'}
+                  </option>
                   {branches.map((b) => (
                     <option key={b.id} value={b.id}>
                       {b.name}
@@ -666,11 +879,17 @@ export function UsersManagementPanel({
                   id="usr-status"
                   value={formStatus}
                   disabled={Boolean(editingUser && editingUser.id === currentUser.id)}
-                  onChange={(e) => setFormStatus(e.target.value as 'active' | 'suspended')}
+                  onChange={(e) =>
+                    setFormStatus(
+                      e.target.value as 'pending' | 'active' | 'suspended' | 'rejected'
+                    )
+                  }
                   className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm disabled:opacity-60"
                 >
-                  <option value="active">Active</option>
+                  <option value="active">Active (Login Allowed)</option>
+                  <option value="pending">Pending Approval</option>
                   <option value="suspended">Suspended (Login Blocked)</option>
+                  <option value="rejected">Rejected</option>
                 </select>
               </div>
 
@@ -691,20 +910,106 @@ export function UsersManagementPanel({
               )}
 
               {formRole === 'teacher' && (
-                <div>
-                  <label htmlFor="usr-specialty" className="block text-xs font-bold text-slate-700">
-                    Teaching Specialty
-                  </label>
-                  <input
-                    id="usr-specialty"
-                    type="text"
-                    value={formSpecialty}
-                    onChange={(e) => setFormSpecialty(e.target.value)}
-                    placeholder="e.g. HSC Grammar & IELTS Writing"
-                    className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                  />
+                <>
+                  <div>
+                    <label htmlFor="usr-specialty" className="block text-xs font-bold text-slate-700">
+                      Teaching Specialty
+                    </label>
+                    <input
+                      id="usr-specialty"
+                      type="text"
+                      value={formSpecialty}
+                      onChange={(e) => setFormSpecialty(e.target.value)}
+                      placeholder="e.g. HSC Grammar & IELTS Writing"
+                      className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="usr-education" className="block text-xs font-bold text-slate-700">
+                      Education / Qualification
+                    </label>
+                    <input
+                      id="usr-education"
+                      type="text"
+                      value={formEducation}
+                      onChange={(e) => setFormEducation(e.target.value)}
+                      placeholder="e.g. MA in English, DU"
+                      className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                    />
+                  </div>
+                </>
+              )}
+
+              {formRole === 'branch' && !formBranchId && (
+                <div className="sm:col-span-2 grid grid-cols-1 gap-3 rounded-2xl border border-purple-200 bg-purple-50/70 p-3 sm:grid-cols-2">
+                  <div>
+                    <label htmlFor="usr-br-name" className="block text-xs font-bold text-purple-900">
+                      New Branch Name
+                    </label>
+                    <input
+                      id="usr-br-name"
+                      type="text"
+                      value={formBranchName}
+                      onChange={(e) => setFormBranchName(e.target.value)}
+                      placeholder="e.g. Sylhet Zindabazar Campus"
+                      className="mt-1 w-full rounded-xl border border-purple-200 bg-white px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="usr-br-code" className="block text-xs font-bold text-purple-900">
+                      Branch Code
+                    </label>
+                    <input
+                      id="usr-br-code"
+                      type="text"
+                      value={formBranchCode}
+                      onChange={(e) => setFormBranchCode(e.target.value)}
+                      placeholder="e.g. AEC-SYL"
+                      className="mt-1 w-full rounded-xl border border-purple-200 bg-white px-3 py-2 text-sm uppercase"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="usr-br-city" className="block text-xs font-bold text-purple-900">
+                      City
+                    </label>
+                    <input
+                      id="usr-br-city"
+                      type="text"
+                      value={formBranchCity}
+                      onChange={(e) => setFormBranchCity(e.target.value)}
+                      placeholder="e.g. Sylhet"
+                      className="mt-1 w-full rounded-xl border border-purple-200 bg-white px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="usr-br-addr" className="block text-xs font-bold text-purple-900">
+                      Campus Address
+                    </label>
+                    <input
+                      id="usr-br-addr"
+                      type="text"
+                      value={formBranchAddress}
+                      onChange={(e) => setFormBranchAddress(e.target.value)}
+                      placeholder="Campus street address"
+                      className="mt-1 w-full rounded-xl border border-purple-200 bg-white px-3 py-2 text-sm"
+                    />
+                  </div>
                 </div>
               )}
+
+              <div className="sm:col-span-2">
+                <label htmlFor="usr-approval-note" className="block text-xs font-bold text-slate-700">
+                  Admin Approval / Audit Note (optional)
+                </label>
+                <input
+                  id="usr-approval-note"
+                  type="text"
+                  value={formApprovalNote}
+                  onChange={(e) => setFormApprovalNote(e.target.value)}
+                  placeholder="Verification remarks for this account..."
+                  className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                />
+              </div>
 
               <div className="sm:col-span-2">
                 <label htmlFor="usr-password" className="block text-xs font-bold text-slate-700 flex items-center gap-1">

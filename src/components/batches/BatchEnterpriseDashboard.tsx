@@ -312,7 +312,7 @@ export function BatchEnterpriseDashboard({
               <Printer className="h-3.5 w-3.5" />
               <span>Print PDF</span>
             </button>
-            {userRole === 'admin' && (
+            {(userRole === 'admin' || userRole === 'branch') && (
               <button
                 type="button"
                 onClick={() => onOpenWizard(null)}
@@ -492,7 +492,7 @@ export function BatchEnterpriseDashboard({
                             <ExternalLink className="h-3 w-3" />
                             <span>Manage (12 Tabs)</span>
                           </button>
-                          {userRole === 'admin' && (
+                          {(userRole === 'admin' || userRole === 'branch') && (
                             <button
                               type="button"
                               aria-label={`Edit ${bat.name}`}

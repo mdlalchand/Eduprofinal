@@ -11,6 +11,7 @@ import type {
   Review,
   SiteSettings,
   User,
+  UserRole,
 } from '../types';
 
 export interface PublicBootstrapData {
@@ -46,6 +47,30 @@ export interface LoginResult {
   setupRequired?: boolean;
 }
 
+export interface RegisterPayload {
+  name: string;
+  email: string;
+  phone: string;
+  password: string;
+  role: 'student' | 'guardian' | 'teacher' | 'branch';
+  branchId?: string;
+  branchName?: string;
+  branchCode?: string;
+  branchCity?: string;
+  branchAddress?: string;
+  subjectSpecialty?: string;
+  education?: string;
+  bio?: string;
+  studentRollToLink?: string;
+  studentVerification?: string;
+}
+
+export interface RegisterResult {
+  ok: boolean;
+  pendingApproval?: boolean;
+  message?: string;
+}
+
 interface AuthContextValue {
   user: User | null;
   token: string | null;
@@ -56,7 +81,8 @@ interface AuthContextValue {
   login: (
     email: string,
     password: string,
-    twoFactor?: { totpCode?: string; recoveryCode?: string }
+    twoFactor?: { totpCode?: string; recoveryCode?: string },
+    expectedRole?: UserRole
   ) => Promise<LoginResult>;
   setupAdmin: (payload: {
     name: string;
@@ -64,17 +90,8 @@ interface AuthContextValue {
     phone?: string;
     password: string;
   }) => Promise<boolean>;
-  register: (payload: {
-    name: string;
-    email: string;
-    phone: string;
-    password: string;
-    role: 'student' | 'guardian';
-    branchId: string;
-    studentRollToLink?: string;
-    studentVerification?: string;
-  }) => Promise<boolean>;
-  requestPasswordReset: (email: string) => Promise<string | null>;
+  register: (payload: RegisterPayload) => Promise<RegisterResult>;
+  requestPasswordReset: (email: string, expectedRole?: UserRole) => Promise<string | null>;
   confirmPasswordReset: (resetToken: string, newPassword: string) => Promise<boolean>;
   logout: () => Promise<void>;
   updateUser: (nextUser: User) => void;
@@ -174,7 +191,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (
       email: string,
       password: string,
-      twoFactor?: { totpCode?: string; recoveryCode?: string }
+      twoFactor?: { totpCode?: string; recoveryCode?: string },
+      expectedRole?: UserRole
     ): Promise<LoginResult> => {
       setAuthError(null);
       try {
@@ -188,6 +206,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           body: JSON.stringify({
             email,
             password,
+            expectedRole,
             totpCode: twoFactor?.totpCode,
             recoveryCode: twoFactor?.recoveryCode,
           }),
@@ -259,70 +278,73 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
-  const register = useCallback(
-    async (payload: {
-      name: string;
-      email: string;
-      phone: string;
-      password: string;
-      role: 'student' | 'guardian';
-      branchId: string;
-      studentRollToLink?: string;
-    }): Promise<boolean> => {
-      setAuthError(null);
-      try {
-        const res = await fetch('/api/auth/register', {
-          method: 'POST',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Requested-With': 'XMLHttpRequest',
-          },
-          body: JSON.stringify(payload),
-        });
-        const data = (await res.json().catch(() => ({}))) as {
-          error?: string;
-          token?: string;
-          user?: User;
-        };
-        if (!res.ok) {
-          setAuthError(data.error || 'Registration failed');
-          return false;
-        }
-        setToken(data.token ?? null);
-        setUser(data.user ?? null);
-        return true;
-      } catch (err) {
-        setAuthError(err instanceof Error ? err.message : 'Network error');
-        return false;
-      }
-    },
-    []
-  );
-
-  const requestPasswordReset = useCallback(async (email: string): Promise<string | null> => {
+  const register = useCallback(async (payload: RegisterPayload): Promise<RegisterResult> => {
     setAuthError(null);
     try {
-      const res = await fetch('/api/auth/password-reset/request', {
+      const res = await fetch('/api/auth/register', {
         method: 'POST',
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
           'X-Requested-With': 'XMLHttpRequest',
         },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify(payload),
       });
-      const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        pendingApproval?: boolean;
+        message?: string;
+        token?: string;
+        user?: User;
+      };
       if (!res.ok) {
-        setAuthError(data.error || 'Password reset request failed');
-        return null;
+        setAuthError(data.error || 'Registration failed');
+        return { ok: false };
       }
-      return data.message || 'Password reset instructions processed.';
+      if (data.pendingApproval || !data.token) {
+        return {
+          ok: true,
+          pendingApproval: true,
+          message:
+            data.message ||
+            'Registration submitted! Your account is awaiting Main Admin approval before you can sign in.',
+        };
+      }
+      setToken(data.token ?? null);
+      setUser(data.user ?? null);
+      return { ok: true, pendingApproval: false };
     } catch (err) {
       setAuthError(err instanceof Error ? err.message : 'Network error');
-      return null;
+      return { ok: false };
     }
   }, []);
+
+  const requestPasswordReset = useCallback(
+    async (email: string, expectedRole?: UserRole): Promise<string | null> => {
+      setAuthError(null);
+      try {
+        const res = await fetch('/api/auth/password-reset/request', {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          body: JSON.stringify({ email, expectedRole }),
+        });
+        const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+        if (!res.ok) {
+          setAuthError(data.error || 'Password reset request failed');
+          return null;
+        }
+        return data.message || 'Password reset instructions processed.';
+      } catch (err) {
+        setAuthError(err instanceof Error ? err.message : 'Network error');
+        return null;
+      }
+    },
+    []
+  );
 
   const confirmPasswordReset = useCallback(
     async (resetToken: string, newPassword: string): Promise<boolean> => {

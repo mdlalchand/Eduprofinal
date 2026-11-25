@@ -1,4 +1,6 @@
-export type UserRole = 'admin' | 'teacher' | 'student' | 'guardian';
+export type UserRole = 'admin' | 'teacher' | 'student' | 'guardian' | 'branch';
+
+export type UserAccountStatus = 'pending' | 'active' | 'suspended' | 'rejected';
 
 export type BranchStatus = 'active' | 'inactive' | 'suspended' | 'archived';
 
@@ -65,9 +67,13 @@ export interface User {
   rollNumber?: string;
   guardianLinkedStudentIds?: string[];
   avatar?: string;
-  status?: 'active' | 'suspended';
+  status?: UserAccountStatus;
   bio?: string;
   subjectSpecialty?: string;
+  education?: string;
+  approvedAt?: string;
+  approvedBy?: string;
+  approvalNote?: string;
   mustResetPassword?: boolean;
   twoFactorEnabled?: boolean;
   communicationConsent?: {
@@ -940,6 +946,7 @@ export interface PaymentTransaction {
   invoiceNo: string;
   referenceType: 'course' | 'order' | 'ebook';
   referenceId: string;
+  branchId?: string | null;
   userId: string;
   payerName: string;
   gateway: PaymentGatewayType;

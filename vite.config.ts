@@ -34,7 +34,7 @@ export default defineConfig(() => {
       },
     },
     server: {
-      // HMR can be disabled via DISABLE_HMR=true in managed preview environments.
+      // HMR is disabled when DISABLE_HMR is true to avoid flickering during programmatic edits.
       hmr: process.env.DISABLE_HMR !== 'true',
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
     },

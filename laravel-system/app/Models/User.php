@@ -11,10 +11,25 @@ class User extends Authenticatable
     use HasFactory, Notifiable;
 
     protected $fillable = [
-        'name', 'email', 'phone', 'role', 'branch_id', 'roll_number', 'password',
+        'name',
+        'email',
+        'phone',
+        'role',
+        'status',
+        'branch_id',
+        'roll_number',
+        'education',
+        'subject_specialty',
+        'bio',
+        'approval_note',
+        'approved_at',
+        'approved_by',
+        'password_reset_token_hash',
+        'password_reset_expires_at',
+        'password',
     ];
 
-    protected $hidden = ['password', 'remember_token'];
+    protected $hidden = ['password', 'remember_token', 'password_reset_token_hash'];
 
     public function branch()
     {

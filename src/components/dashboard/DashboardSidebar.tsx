@@ -110,13 +110,17 @@ export function DashboardSidebar({
             ? 'Student Roster'
             : user.role === 'guardian'
               ? 'Child Progress'
-              : 'Students',
+              : user.role === 'branch'
+                ? 'Campus Admissions'
+                : 'Students',
       labelBn:
         user.role === 'student'
           ? 'আমার কোর্স'
           : user.role === 'guardian'
             ? 'সন্তানের অগ্রগতি'
-            : 'শিক্ষার্থী',
+            : user.role === 'branch'
+              ? 'শাখা ভর্তি'
+              : 'শিক্ষার্থী',
       icon: GraduationCap,
       section: user.role === 'student' ? 'my_learning' : user.role === 'guardian' ? 'guardian_monitor' : 'enrollments',
     },
@@ -205,8 +209,8 @@ export function DashboardSidebar({
     },
     {
       id: 'branches',
-      label: 'Branches',
-      labelBn: 'শাখা সমূহ',
+      label: user.role === 'branch' ? 'My Campus Branch' : 'Branches',
+      labelBn: user.role === 'branch' ? 'আমার শাখা' : 'শাখা সমূহ',
       icon: Building2,
       section: 'branches',
     },

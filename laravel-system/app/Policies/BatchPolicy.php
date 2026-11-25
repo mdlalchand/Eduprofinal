@@ -11,7 +11,7 @@ class BatchPolicy
 {
     public function viewAny(User $user): bool
     {
-        return in_array($user->role, ['admin', 'branch_manager', 'teacher', 'student'], true);
+        return in_array($user->role, ['admin', 'branch', 'teacher', 'student'], true);
     }
 
     public function view(User $user, Batch $batch): bool
@@ -19,7 +19,7 @@ class BatchPolicy
         if ($user->role === 'admin') {
             return true;
         }
-        if ($user->role === 'branch_manager') {
+        if ($user->role === 'branch') {
             return !$user->branch_id || (int) $batch->branch_id === (int) $user->branch_id;
         }
         if ($user->role === 'teacher') {
@@ -38,7 +38,7 @@ class BatchPolicy
 
     public function create(User $user): bool
     {
-        return in_array($user->role, ['admin', 'branch_manager'], true);
+        return in_array($user->role, ['admin', 'branch'], true);
     }
 
     public function update(User $user, Batch $batch): bool
@@ -46,7 +46,7 @@ class BatchPolicy
         if ($user->role === 'admin') {
             return true;
         }
-        if ($user->role === 'branch_manager') {
+        if ($user->role === 'branch') {
             return !$user->branch_id || (int) $batch->branch_id === (int) $user->branch_id;
         }
         return false;
@@ -54,7 +54,7 @@ class BatchPolicy
 
     public function manageAttendance(User $user, Batch $batch): bool
     {
-        if ($user->role === 'admin' || $user->role === 'branch_manager') {
+        if ($user->role === 'admin' || $user->role === 'branch') {
             return $this->update($user, $batch);
         }
         return $user->role === 'teacher' && $this->view($user, $batch);

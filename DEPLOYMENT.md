@@ -20,7 +20,7 @@
 ---
 
 ## 2. Interactive Preview & SaaS Workspace (Node.js + Express)
-- **Role Governance**: Strictly enforces `admin` (single Main Admin at DB level via `idx_single_main_admin`), `teacher`, `student`, and `guardian`.
+- **Role Governance & Approval**: Strictly enforces `admin` (single Main Admin at DB level via `idx_single_main_admin`), `branch`, `teacher`, `student`, and `guardian`. Self-registrations enter `pending` status until Main Admin approval, with role-scoped login and password recovery (`/login/:role`, `/register/:role`, `/recover/:role`).
 - **Session Secret (`SESSION_SECRET`)**:
   - In production (`NODE_ENV=production`), `SESSION_SECRET` **must be at least 32 characters** (`server.ts` refuses to start with weak/missing secrets unless `ALLOW_LOCAL_SESSION_SECRET_FALLBACK=true` is explicitly set for local preview).
   - Integration secrets are encrypted at rest with AES-256-GCM using `INTEGRATION_ENCRYPTION_KEY` (or `SESSION_SECRET`).

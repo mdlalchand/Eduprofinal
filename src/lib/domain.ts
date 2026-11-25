@@ -81,6 +81,16 @@ const ROLE_PORTAL_MATRIX: Record<UserRole, PortalSection[]> = {
     'guardian_monitor',
     'profile',
   ],
+  branch: [
+    'overview',
+    'enrollments',
+    'courses',
+    'lessons',
+    'attendance_finance',
+    'branches',
+    'orders',
+    'profile',
+  ],
 };
 
 export function getAllowedPortalSections(role: UserRole): PortalSection[] {

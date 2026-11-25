@@ -166,7 +166,7 @@
         </div>
     @endif
 
-    @if(in_array($user->role, ['admin', 'teacher', 'branch_manager']) && isset($batches))
+    @if(in_array($user->role, ['admin', 'teacher', 'branch']) && isset($batches))
         <div id="batches-studio" class="rounded-2xl bg-white border border-slate-200 p-6">
             <h2 class="text-lg font-extrabold text-slate-900 mb-1">Course Batches &amp; Routine Studio ({{ $batches->count() }})</h2>
             <p class="text-xs text-slate-500 mb-4">Create, edit, or delete course batches.</p>
@@ -315,7 +315,7 @@
         </div>
     @endif
 
-    @if(in_array($user->role, ['admin', 'branch_manager']))
+    @if(in_array($user->role, ['admin', 'branch']))
         <div class="rounded-2xl bg-white border border-slate-200 p-6">
             <h2 class="text-lg font-extrabold mb-4">Enrollments &amp; Fee Approvals ({{ $enrollments->count() }})</h2>
             <div class="space-y-2">

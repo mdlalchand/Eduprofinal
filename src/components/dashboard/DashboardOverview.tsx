@@ -111,7 +111,9 @@ export function DashboardOverview({
     if (id === 'students') {
       onSelectSection('enrollments');
     } else if (id === 'teachers') {
-      onSelectSection(data.role === 'admin' ? 'users' : 'exams');
+      onSelectSection(
+        data.role === 'admin' ? 'users' : data.role === 'branch' ? 'attendance_finance' : 'exams'
+      );
     } else if (id === 'courses') {
       onSelectSection('courses', 'courses');
     } else if (id === 'batches') {
@@ -126,7 +128,9 @@ export function DashboardOverview({
         ? `Guardian Academic Watch · ${(data.children ?? []).length} Linked Student(s)`
         : data.role === 'teacher'
           ? `Faculty Coaching Studio · ${(data.courses ?? []).length} Assigned Course(s)`
-          : cfg.heroSubtitle;
+          : data.role === 'branch'
+            ? `Campus Branch Operations · ${data.branch?.name ?? 'Assigned Campus'}`
+            : cfg.heroSubtitle;
 
   const heroAvatarSrc = viewerAvatar?.trim() || cfg.images.heroAvatarUrl;
   const heroBgSrc = cfg.images.heroBannerBgUrl;
@@ -208,11 +212,13 @@ export function DashboardOverview({
                       onSelectSection(
                         data.role === 'teacher'
                           ? 'enrollments'
-                          : data.role === 'student'
-                            ? 'my_learning'
-                            : data.role === 'guardian'
-                              ? 'guardian_monitor'
-                              : cfg.heroCtaSection
+                          : data.role === 'branch'
+                            ? 'enrollments'
+                            : data.role === 'student'
+                              ? 'my_learning'
+                              : data.role === 'guardian'
+                                ? 'guardian_monitor'
+                                : cfg.heroCtaSection
                       )
                     }
                     style={{
@@ -224,11 +230,13 @@ export function DashboardOverview({
                     <span>
                       {data.role === 'teacher'
                         ? 'Open Student Roster'
-                        : data.role === 'student'
-                          ? 'Open My Learning'
-                          : data.role === 'guardian'
-                            ? 'Child 360° Monitor'
-                            : cfg.heroCtaLabel}
+                        : data.role === 'branch'
+                          ? 'Manage Campus Admissions'
+                          : data.role === 'student'
+                            ? 'Open My Learning'
+                            : data.role === 'guardian'
+                              ? 'Child 360° Monitor'
+                              : cfg.heroCtaLabel}
                     </span>
                     <ArrowRight className="h-3.5 w-3.5" />
                   </button>

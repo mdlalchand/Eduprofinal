@@ -89,7 +89,7 @@ class PortalController extends Controller
             ));
         }
 
-        if ($role === 'branch_manager') {
+        if ($role === 'branch') {
             $batches = Batch::where('branch_id', $user->branch_id)->with(['course', 'branch'])->latest()->get();
             $enrollments = Enrollment::where('branch_id', $user->branch_id)->with(['user', 'course'])->latest()->get();
             $users = User::where('branch_id', $user->branch_id)->get();
@@ -249,8 +249,8 @@ class PortalController extends Controller
             'status' => 'required|in:open,running,closed',
         ]);
 
-        if ($actor->role === 'branch_manager' && $actor->branch_id && (int) ($data['branch_id'] ?? 0) !== (int) $actor->branch_id) {
-            abort(403, 'Branch managers can only create batches for their own branch.');
+        if ($actor->role === 'branch' && $actor->branch_id && (int) ($data['branch_id'] ?? 0) !== (int) $actor->branch_id) {
+            abort(403, 'Branch accounts can only create batches for their own branch.');
         }
 
         $data['code'] = strtoupper(trim($data['code']));
@@ -261,8 +261,8 @@ class PortalController extends Controller
     public function updateBatch(Request $request, Batch $batch)
     {
         $actor = $request->user();
-        if ($actor->role === 'branch_manager' && $actor->branch_id && (int) $batch->branch_id !== (int) $actor->branch_id) {
-            abort(403, 'Branch managers can only update batches in their own branch.');
+        if ($actor->role === 'branch' && $actor->branch_id && (int) $batch->branch_id !== (int) $actor->branch_id) {
+            abort(403, 'Branch accounts can only update batches in their own branch.');
         }
 
         $data = $request->validate([
@@ -293,8 +293,8 @@ class PortalController extends Controller
     public function deleteBatch(Request $request, Batch $batch)
     {
         $actor = $request->user();
-        if ($actor->role === 'branch_manager' && $actor->branch_id && (int) $batch->branch_id !== (int) $actor->branch_id) {
-            abort(403, 'Branch managers can only delete batches in their own branch.');
+        if ($actor->role === 'branch' && $actor->branch_id && (int) $batch->branch_id !== (int) $actor->branch_id) {
+            abort(403, 'Branch accounts can only delete batches in their own branch.');
         }
         $batch->delete();
         return back()->with('status', 'Course batch deleted.');
@@ -691,25 +691,138 @@ class PortalController extends Controller
     public function storeUser(Request $request)
     {
         $data = $request->validate([
-            'name' => 'required|string',
+            'name' => 'required|string|max:120',
             'email' => 'required|email|unique:users,email',
-            'phone' => 'nullable|string',
-            'role' => 'required|in:admin,branch_manager,teacher,student,guardian',
+            'phone' => 'nullable|string|max:30',
+            'role' => 'required|in:branch,teacher,student,guardian',
+            'status' => 'nullable|in:pending,active,suspended,rejected',
             'branch_id' => 'nullable|exists:branches,id',
+            'education' => 'nullable|string|max:180',
+            'subject_specialty' => 'nullable|string|max:120',
             'password' => 'required|string|min:6',
         ]);
 
         User::create([
             ...$data,
+            'email' => strtolower(trim($data['email'])),
+            'status' => $data['status'] ?? 'active',
+            'approved_at' => ($data['status'] ?? 'active') === 'active' ? now() : null,
+            'approved_by' => ($data['status'] ?? 'active') === 'active' ? $request->user()->name : null,
             'password' => Hash::make($data['password']),
         ]);
 
         return back()->with('status', 'User created.');
     }
 
+    public function updateUser(Request $request, User $user)
+    {
+        $data = $request->validate([
+            'name' => 'required|string|max:120',
+            'email' => 'required|email|unique:users,email,' . $user->id,
+            'phone' => 'nullable|string|max:30',
+            'role' => 'required|in:admin,branch,teacher,student,guardian',
+            'status' => 'required|in:pending,active,suspended,rejected',
+            'branch_id' => 'nullable|exists:branches,id',
+            'education' => 'nullable|string|max:180',
+            'subject_specialty' => 'nullable|string|max:120',
+            'bio' => 'nullable|string|max:1000',
+            'approval_note' => 'nullable|string|max:500',
+            'password' => 'nullable|string|min:6',
+        ]);
+
+        if ($user->role === 'admin' && ($data['role'] !== 'admin' || $data['status'] !== 'active')) {
+            return back()->withErrors(['user' => 'The sole Main Admin account must remain active with admin role.']);
+        }
+        if ($user->role !== 'admin' && $data['role'] === 'admin') {
+            return back()->withErrors(['user' => 'Additional Main Admin accounts cannot be promoted (Single Main Admin policy).']);
+        }
+
+        $payload = [
+            'name' => trim($data['name']),
+            'email' => strtolower(trim($data['email'])),
+            'phone' => $data['phone'] ?? $user->phone,
+            'role' => $data['role'],
+            'status' => $data['status'],
+            'branch_id' => $data['branch_id'] ?? null,
+            'education' => $data['education'] ?? $user->education,
+            'subject_specialty' => $data['subject_specialty'] ?? $user->subject_specialty,
+            'bio' => $data['bio'] ?? $user->bio,
+            'approval_note' => $data['approval_note'] ?? $user->approval_note,
+        ];
+        if ($data['status'] === 'active' && !$user->approved_at) {
+            $payload['approved_at'] = now();
+            $payload['approved_by'] = $request->user()->name;
+        }
+        if (!empty($data['password'])) {
+            $payload['password'] = Hash::make($data['password']);
+        }
+
+        $user->update($payload);
+
+        if ($user->role === 'branch' && $user->branch_id && $data['status'] === 'active') {
+            Branch::whereKey($user->branch_id)->update(['status' => 'active']);
+        }
+
+        return back()->with('status', "Account '{$user->name}' updated.");
+    }
+
+    public function approveUser(Request $request, User $user)
+    {
+        $user->update([
+            'status' => 'active',
+            'approval_note' => $request->input('approval_note') ?: 'Approved by Main Admin',
+            'approved_at' => now(),
+            'approved_by' => $request->user()->name,
+        ]);
+
+        if ($user->role === 'branch' && $user->branch_id) {
+            Branch::whereKey($user->branch_id)->update(['status' => 'active']);
+        }
+
+        return back()->with('status', "Account '{$user->name}' ({$user->role}) approved.");
+    }
+
+    public function rejectUser(Request $request, User $user)
+    {
+        if ($user->role === 'admin') {
+            return back()->withErrors(['user' => 'Cannot reject the Main Admin account.']);
+        }
+
+        $user->update([
+            'status' => 'rejected',
+            'approval_note' => $request->input('approval_note') ?: 'Rejected by Main Admin',
+        ]);
+
+        if ($user->role === 'branch' && $user->branch_id) {
+            Branch::whereKey($user->branch_id)->update(['status' => 'inactive']);
+        }
+
+        return back()->with('status', "Account '{$user->name}' rejected.");
+    }
+
+    public function issueResetToken(Request $request, User $user)
+    {
+        $rawToken = strtoupper(bin2hex(random_bytes(5)));
+        $user->update([
+            'password_reset_token_hash' => hash('sha256', $rawToken),
+            'password_reset_expires_at' => now()->addHour(),
+        ]);
+
+        return back()
+            ->with('status', "Password recovery token generated for {$user->email} (expires in 1 hour).")
+            ->with('issued_reset_token', $rawToken)
+            ->with('issued_reset_email', $user->email);
+    }
+
     public function updateUserRole(Request $request, User $user)
     {
-        $data = $request->validate(['role' => 'required|in:admin,branch_manager,teacher,student,guardian']);
+        $data = $request->validate(['role' => 'required|in:admin,branch,teacher,student,guardian']);
+        if ($user->role === 'admin' && $data['role'] !== 'admin') {
+            return back()->withErrors(['user' => 'Main Admin role cannot be downgraded.']);
+        }
+        if ($user->role !== 'admin' && $data['role'] === 'admin') {
+            return back()->withErrors(['user' => 'Single Main Admin invariant prevents promoting another admin.']);
+        }
         $user->update(['role' => $data['role']]);
         return back()->with('status', 'Role updated.');
     }
@@ -717,8 +830,8 @@ class PortalController extends Controller
     public function decideEnrollment(Request $request, Enrollment $enrollment)
     {
         $actor = $request->user();
-        if ($actor->role === 'branch_manager' && $enrollment->branch_id !== $actor->branch_id) {
-            abort(403, 'Branch managers can only approve enrollments in their own branch.');
+        if ($actor->role === 'branch' && $enrollment->branch_id !== $actor->branch_id) {
+            abort(403, 'Branch accounts can only approve enrollments in their own branch.');
         }
 
         $data = $request->validate(['status' => 'required|in:approved,rejected']);

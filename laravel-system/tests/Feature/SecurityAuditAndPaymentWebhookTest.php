@@ -74,7 +74,7 @@ class SecurityAuditAndPaymentWebhookTest extends TestCase
 
         $this->assertNull(User::where('email', 'fake.guardian@example.com')->first());
 
-        // 2. Valid HMAC linking code succeeds
+        // 2. Valid HMAC linking code succeeds and enters pending approval
         $linkCode = AuthController::guardianLinkCode($student);
         $this->post(route('register.post'), [
             'name' => 'Verified Parent',
@@ -85,15 +85,103 @@ class SecurityAuditAndPaymentWebhookTest extends TestCase
             'student_roll_link' => 'AEC-2026-8801',
             'student_verification' => $linkCode,
             'password' => 'GuardPass123!',
-        ])->assertRedirect(route('portal.index'));
+        ])->assertRedirect(route('login', ['role' => 'guardian']));
 
         $guardian = User::where('email', 'verified.parent@example.com')->firstOrFail();
+        $this->assertSame('pending', $guardian->status);
         $this->assertTrue(
             DB::table('guardian_student')
                 ->where('guardian_id', $guardian->id)
                 ->where('student_id', $student->id)
                 ->exists()
         );
+    }
+
+    public function test_branch_teacher_registration_pending_approval_admin_modify_and_password_recovery(): void
+    {
+        $admin = User::create([
+            'name' => 'Main Admin',
+            'email' => 'admin@academy.example',
+            'phone' => '01700000001',
+            'role' => 'admin',
+            'status' => 'active',
+            'password' => Hash::make('AdminPass123!'),
+        ]);
+
+        // Branch self-registers -> creates inactive branch + pending branch account
+        $this->post(route('register.post'), [
+            'name' => 'Banani Lead',
+            'email' => 'banani@branch.example',
+            'phone' => '01711112222',
+            'role' => 'branch',
+            'branch_name' => 'Banani Campus',
+            'branch_code' => 'BNN01',
+            'branch_city' => 'Dhaka',
+            'branch_address' => 'Road 11, Banani',
+            'password' => 'BranchPass123!',
+        ])->assertRedirect(route('login', ['role' => 'branch']));
+
+        $branchUser = User::where('email', 'banani@branch.example')->firstOrFail();
+        $this->assertSame('pending', $branchUser->status);
+        $this->assertNotNull($branchUser->branch_id);
+        $this->assertSame('inactive', Branch::findOrFail($branchUser->branch_id)->status);
+
+        // Login blocked while pending
+        $this->post(route('login.post'), [
+            'email' => 'banani@branch.example',
+            'password' => 'BranchPass123!',
+            'expected_role' => 'branch',
+        ])->assertSessionHasErrors('email');
+
+        // Teacher self-registers
+        $this->post(route('register.post'), [
+            'name' => 'Sadia Rahman',
+            'email' => 'sadia@teacher.example',
+            'phone' => '01722223333',
+            'role' => 'teacher',
+            'subject_specialty' => 'IELTS Writing',
+            'education' => 'M.A. in TESOL',
+            'password' => 'TeachPass123!',
+        ])->assertRedirect(route('login', ['role' => 'teacher']));
+
+        $teacherUser = User::where('email', 'sadia@teacher.example')->firstOrFail();
+        $this->assertSame('pending', $teacherUser->status);
+
+        // Main Admin approves Branch (activates Branch campus too) and modifies Teacher
+        $this->actingAs($admin)->post(route('portal.users.approve', $branchUser))->assertRedirect();
+        $this->assertSame('active', $branchUser->fresh()->status);
+        $this->assertSame('active', Branch::findOrFail($branchUser->branch_id)->status);
+
+        $this->actingAs($admin)->patch(route('portal.users.update', $teacherUser), [
+            'name' => 'Sadia Rahman Verified',
+            'email' => 'sadia@teacher.example',
+            'phone' => '01722223333',
+            'role' => 'teacher',
+            'status' => 'active',
+            'subject_specialty' => 'IELTS Band 8',
+            'education' => 'M.A. TESOL, CELTA',
+        ])->assertRedirect();
+        $this->assertSame('active', $teacherUser->fresh()->status);
+        $this->assertSame('Sadia Rahman Verified', $teacherUser->fresh()->name);
+
+        // Admin issues recovery token and Teacher resets password
+        $tokenResp = $this->actingAs($admin)->post(route('portal.users.reset_token', $teacherUser));
+        $issuedToken = (string) session('issued_reset_token');
+        $this->assertNotEmpty($issuedToken);
+
+        $this->post('/logout');
+        $this->post(route('recover.confirm'), [
+            'email' => 'sadia@teacher.example',
+            'token' => $issuedToken,
+            'password' => 'NewTeachPass99!',
+            'expected_role' => 'teacher',
+        ])->assertRedirect(route('login', ['role' => 'teacher']));
+
+        $this->post(route('login.post'), [
+            'email' => 'sadia@teacher.example',
+            'password' => 'NewTeachPass99!',
+            'expected_role' => 'teacher',
+        ])->assertRedirect(route('portal.index'));
     }
 
     public function test_paid_enrollment_rejects_invalid_webhook_and_requires_signed_settlement(): void

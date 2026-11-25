@@ -32,7 +32,18 @@ import type {
 } from '../types';
 import type { DatabaseState, ExamSessionTimer, SessionRecord, StoredUser } from '../server/storeTypes';
 
-const ALLOWED_ROLES = new Set(['admin', 'teacher', 'student', 'guardian']);
+const ALLOWED_ROLES = new Set(['admin', 'teacher', 'student', 'guardian', 'branch']);
+const ALLOWED_USER_STATUSES = new Set(['pending', 'active', 'suspended', 'rejected']);
+
+function normalizeUserAccountStatus(
+  status: unknown
+): 'pending' | 'active' | 'suspended' | 'rejected' {
+  const s = String(status ?? 'active');
+  return ALLOWED_USER_STATUSES.has(s)
+    ? (s as 'pending' | 'active' | 'suspended' | 'rejected')
+    : 'active';
+}
+
 const ALLOWED_BRANCH_STATUSES = new Set<BranchStatus>([
   'active',
   'inactive',
@@ -111,6 +122,76 @@ export function getSqliteDb(): Database.Database {
   fs.mkdirSync(path.dirname(targetPath), { recursive: true });
   const db = new Database(targetPath);
   db.exec(SQLITE_SCHEMA_SQL);
+
+  // Automatic non-destructive SQLite table upgrade when legacy CHECK constraints or columns exist
+  const usersDdl = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'")
+    .get() as { sql?: string } | undefined;
+  const needsUsersMigration =
+    Boolean(usersDdl?.sql) &&
+    (!usersDdl!.sql!.includes("'branch'") ||
+      !usersDdl!.sql!.includes("'pending'") ||
+      !usersDdl!.sql!.includes('approved_at'));
+
+  if (needsUsersMigration) {
+    const existingCols = new Set(
+      (db.prepare('PRAGMA table_info(users)').all() as Array<{ name: string }>).map((c) => c.name)
+    );
+    const selCol = (name: string) => (existingCols.has(name) ? name : `NULL AS ${name}`);
+    db.pragma('foreign_keys = OFF');
+    const migrateUsersTx = db.transaction(() => {
+      db.exec(`
+        DROP TABLE IF EXISTS users_migrated;
+        CREATE TABLE users_migrated (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          email TEXT NOT NULL COLLATE NOCASE UNIQUE,
+          phone TEXT NOT NULL,
+          role TEXT NOT NULL CHECK (role IN ('admin', 'teacher', 'student', 'guardian', 'branch')),
+          branch_id TEXT REFERENCES branches(id) ON DELETE SET NULL,
+          roll_number TEXT UNIQUE,
+          guardian_linked_student_ids TEXT NOT NULL DEFAULT '[]',
+          avatar TEXT,
+          status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('pending', 'active', 'suspended', 'rejected')),
+          bio TEXT,
+          subject_specialty TEXT,
+          education TEXT,
+          approved_at TEXT,
+          approved_by TEXT,
+          approval_note TEXT,
+          password_hash TEXT NOT NULL DEFAULT '',
+          must_reset_password INTEGER NOT NULL DEFAULT 0,
+          password_updated_at TEXT,
+          two_factor_enabled INTEGER NOT NULL DEFAULT 0,
+          two_factor_secret TEXT,
+          two_factor_recovery_hashes TEXT NOT NULL DEFAULT '[]',
+          communication_consent_json TEXT NOT NULL DEFAULT '{"email":true,"sms":true,"whatsapp":true}',
+          last_login_at TEXT,
+          created_at TEXT NOT NULL
+        );
+        INSERT INTO users_migrated (
+          id, name, email, phone, role, branch_id, roll_number, guardian_linked_student_ids,
+          avatar, status, bio, subject_specialty, education, approved_at, approved_by, approval_note,
+          password_hash, must_reset_password, password_updated_at, two_factor_enabled,
+          two_factor_secret, two_factor_recovery_hashes, communication_consent_json, last_login_at, created_at
+        )
+        SELECT
+          id, name, email, phone, role, branch_id, roll_number, guardian_linked_student_ids,
+          avatar, status, bio, subject_specialty, ${selCol('education')}, ${selCol('approved_at')},
+          ${selCol('approved_by')}, ${selCol('approval_note')},
+          password_hash, must_reset_password, password_updated_at, two_factor_enabled,
+          two_factor_secret, two_factor_recovery_hashes, communication_consent_json, last_login_at, created_at
+        FROM users;
+        DROP TABLE users;
+        ALTER TABLE users_migrated RENAME TO users;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_single_main_admin ON users(role) WHERE role = 'admin';
+        CREATE INDEX IF NOT EXISTS idx_users_role_branch ON users(role, branch_id);
+      `);
+    });
+    migrateUsersTx();
+    db.pragma('foreign_keys = ON');
+  }
+
   const integrity = db.pragma('integrity_check', { simple: true });
   if (integrity !== 'ok') {
     throw new Error(`CRITICAL: SQLite database failed integrity_check (${String(integrity)}). Refusing to start.`);
@@ -242,9 +323,13 @@ export function sanitizeLegacyStateForRelationalMigration(
         ? u.guardianLinkedStudentIds.map(String)
         : undefined,
       avatar: u.avatar ? String(u.avatar) : undefined,
-      status: u.status === 'suspended' ? 'suspended' : 'active',
+      status: normalizeUserAccountStatus(u.status),
       bio: u.bio ? String(u.bio) : undefined,
       subjectSpecialty: u.subjectSpecialty ? String(u.subjectSpecialty) : undefined,
+      education: u.education ? String(u.education) : undefined,
+      approvedAt: u.approvedAt ? String(u.approvedAt) : undefined,
+      approvedBy: u.approvedBy ? String(u.approvedBy) : undefined,
+      approvalNote: u.approvalNote ? String(u.approvalNote) : undefined,
       mustResetPassword: Boolean(u.mustResetPassword),
       twoFactorEnabled: Boolean(u.twoFactorEnabled),
       twoFactorSecret: u.twoFactorSecret ? String(u.twoFactorSecret) : null,
@@ -425,16 +510,18 @@ export function persistStateToSqlite(state: DatabaseState): void {
       db.prepare(
         `INSERT INTO users (
            id, name, email, phone, role, branch_id, roll_number, guardian_linked_student_ids,
-           avatar, status, bio, subject_specialty, password_hash, must_reset_password,
-           password_updated_at, two_factor_enabled, two_factor_secret, two_factor_recovery_hashes,
-           communication_consent_json, last_login_at, created_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           avatar, status, bio, subject_specialty, education, approved_at, approved_by, approval_note,
+           password_hash, must_reset_password, password_updated_at, two_factor_enabled,
+           two_factor_secret, two_factor_recovery_hashes, communication_consent_json, last_login_at, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            name=excluded.name, email=excluded.email, phone=excluded.phone, role=excluded.role,
            branch_id=excluded.branch_id, roll_number=excluded.roll_number,
            guardian_linked_student_ids=excluded.guardian_linked_student_ids,
            avatar=excluded.avatar, status=excluded.status, bio=excluded.bio,
-           subject_specialty=excluded.subject_specialty, password_hash=excluded.password_hash,
+           subject_specialty=excluded.subject_specialty, education=excluded.education,
+           approved_at=excluded.approved_at, approved_by=excluded.approved_by,
+           approval_note=excluded.approval_note, password_hash=excluded.password_hash,
            must_reset_password=excluded.must_reset_password, password_updated_at=excluded.password_updated_at,
            two_factor_enabled=excluded.two_factor_enabled, two_factor_secret=excluded.two_factor_secret,
            two_factor_recovery_hashes=excluded.two_factor_recovery_hashes,
@@ -450,9 +537,13 @@ export function persistStateToSqlite(state: DatabaseState): void {
         u.rollNumber ?? null,
         JSON.stringify(u.guardianLinkedStudentIds ?? []),
         u.avatar ?? null,
-        u.status ?? 'active',
+        normalizeUserAccountStatus(u.status),
         u.bio ?? null,
         u.subjectSpecialty ?? null,
+        u.education ?? null,
+        u.approvedAt ?? null,
+        u.approvedBy ?? null,
+        u.approvalNote ?? null,
         u.passwordHash,
         u.mustResetPassword ? 1 : 0,
         u.passwordUpdatedAt ?? null,
@@ -985,9 +1076,13 @@ export function loadStateFromSqlite(defaultFactory: () => DatabaseState): Databa
       rollNumber: r.roll_number ? String(r.roll_number) : undefined,
       guardianLinkedStudentIds: JSON.parse(String(r.guardian_linked_student_ids || '[]')),
       avatar: r.avatar ? String(r.avatar) : undefined,
-      status: (r.status === 'suspended' ? 'suspended' : 'active') as 'active' | 'suspended',
+      status: normalizeUserAccountStatus(r.status),
       bio: r.bio ? String(r.bio) : undefined,
       subjectSpecialty: r.subject_specialty ? String(r.subject_specialty) : undefined,
+      education: r.education ? String(r.education) : undefined,
+      approvedAt: r.approved_at ? String(r.approved_at) : undefined,
+      approvedBy: r.approved_by ? String(r.approved_by) : undefined,
+      approvalNote: r.approval_note ? String(r.approval_note) : undefined,
       passwordHash: String(r.password_hash ?? ''),
       mustResetPassword: Boolean(r.must_reset_password),
       passwordUpdatedAt: r.password_updated_at ? String(r.password_updated_at) : null,

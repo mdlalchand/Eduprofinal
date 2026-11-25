@@ -151,9 +151,14 @@ export function createEnterpriseOpsRouter(
 
   // ---------------- COMPLETE BRANCH MANAGEMENT (MAIN ADMIN ONLY) ----------------
 
-  router.get('/api/portal/branches/analytics', requireAuth, requireRole(['admin']), (_req, res) => {
+  router.get('/api/portal/branches/analytics', requireAuth, requireRole(['admin', 'branch']), (req: AuthedRequest, res) => {
     const db = getDb();
-    const branchStats = db.branches.map((branch) => {
+    const actor = req.authUser!;
+    const visibleBranches =
+      actor.role === 'branch'
+        ? db.branches.filter((b) => b.id === actor.branchId)
+        : db.branches;
+    const branchStats = visibleBranches.map((branch) => {
       const enrollments = db.enrollments.filter((e) => e.branchId === branch.id);
       const approvedEnrollments = enrollments.filter((e) => e.status === 'approved');
       const teachers = db.users.filter((u) => u.role === 'teacher' && u.branchId === branch.id);
@@ -191,9 +196,12 @@ export function createEnterpriseOpsRouter(
     });
 
     res.json({
-      branches: db.branches,
+      branches: visibleBranches,
       branchStats,
-      statusHistory: db.branchStatusHistory,
+      statusHistory:
+        actor.role === 'branch'
+          ? db.branchStatusHistory.filter((h) => h.branchId === actor.branchId)
+          : db.branchStatusHistory,
     });
   });
 
@@ -262,8 +270,13 @@ export function createEnterpriseOpsRouter(
     });
   });
 
-  router.get('/api/portal/branches/:id/report-csv', requireAuth, requireRole(['admin']), (req, res) => {
+  router.get('/api/portal/branches/:id/report-csv', requireAuth, requireRole(['admin', 'branch']), (req: AuthedRequest, res) => {
     const db = getDb();
+    const actor = req.authUser!;
+    if (actor.role === 'branch' && actor.branchId !== req.params.id) {
+      res.status(403).json({ error: 'Branch isolation: cannot export another campus CSV.' });
+      return;
+    }
     const branch = db.branches.find((b) => b.id === req.params.id);
     if (!branch) {
       res.status(404).json({ error: 'Branch not found.' });
@@ -292,7 +305,7 @@ export function createEnterpriseOpsRouter(
   router.get(
     '/api/portal/academic/overview',
     requireAuth,
-    requireRole(['admin', 'teacher', 'student', 'guardian']),
+    requireRole(['admin', 'teacher', 'student', 'guardian', 'branch']),
     (req: AuthedRequest, res) => {
       const db = getDb();
       const actor = req.authUser!;
@@ -302,6 +315,8 @@ export function createEnterpriseOpsRouter(
       } else if (actor.role === 'guardian') {
         const linked = new Set(actor.guardianLinkedStudentIds ?? []);
         admissions = admissions.filter((a) => linked.has(a.studentUserId));
+      } else if (actor.role === 'branch') {
+        admissions = actor.branchId ? admissions.filter((a) => a.branchId === actor.branchId) : [];
       } else if (actor.role === 'teacher') {
         const teacherBatchCourseIds = new Set(
           db.batches

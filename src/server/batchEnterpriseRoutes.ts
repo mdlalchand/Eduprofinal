@@ -55,6 +55,9 @@ function canActorAccessBatch(
   db: ReturnType<typeof getDb>
 ): boolean {
   if (actor.role === 'admin') return true;
+  if (actor.role === 'branch') {
+    return Boolean(actor.branchId && batch.branchId === actor.branchId);
+  }
   if (actor.role === 'teacher') {
     const assigned = getTeacherAssignedBatches(actor, [batch], db.instructors);
     if (assigned.length > 0) return true;
@@ -138,7 +141,7 @@ export function createBatchEnterpriseRouter(
   router.get(
     '/api/portal/batches/dashboard',
     requireAuth,
-    requireRole(['admin', 'teacher']),
+    requireRole(['admin', 'teacher', 'branch']),
     (req: AuthedRequest, res) => {
       const db = getDb();
       const actor = req.authUser!;
@@ -146,6 +149,8 @@ export function createBatchEnterpriseRouter(
       let scopedBatches = db.batches;
       if (actor.role === 'teacher') {
         scopedBatches = getTeacherAssignedBatches(actor, db.batches, db.instructors);
+      } else if (actor.role === 'branch') {
+        scopedBatches = actor.branchId ? db.batches.filter((b) => b.branchId === actor.branchId) : [];
       }
 
       const analytics = computeBatchDashboardAnalytics({
@@ -260,7 +265,7 @@ export function createBatchEnterpriseRouter(
   router.post(
     '/api/portal/batches/check-conflicts',
     requireAuth,
-    requireRole(['admin', 'teacher']),
+    requireRole(['admin', 'teacher', 'branch']),
     (req: AuthedRequest, res) => {
       const db = getDb();
       const body = (req.body ?? {}) as Record<string, unknown>;
@@ -293,7 +298,7 @@ export function createBatchEnterpriseRouter(
   router.post(
     '/api/portal/batches/enterprise',
     requireAuth,
-    requireRole(['admin', 'teacher']),
+    requireRole(['admin', 'teacher', 'branch']),
     (req: AuthedRequest, res) => {
       const db = getDb();
       const actor = req.authUser!;
@@ -318,7 +323,13 @@ export function createBatchEnterpriseRouter(
       if (!course) return void res.status(404).json({ error: 'Selected course not found.' });
 
       const activeFallbackBranch = db.branches.find((b) => b.status === 'active')?.id ?? db.branches[0]?.id ?? 'br-mirpur';
-      const branchId = String(body.branchId ?? activeFallbackBranch).trim();
+      const branchId =
+        actor.role === 'branch' && actor.branchId
+          ? actor.branchId
+          : String(body.branchId ?? activeFallbackBranch).trim();
+      if (actor.role === 'branch' && body.branchId && String(body.branchId).trim() !== actor.branchId) {
+        return void res.status(403).json({ error: 'Branch accounts can only create batches for their own campus.' });
+      }
       const branchCheck = assertBranchOperationalForTransactions(branchId);
       if (!branchCheck.ok) {
         return void res.status(403).json({ error: branchCheck.error });
@@ -539,7 +550,7 @@ export function createBatchEnterpriseRouter(
   router.put(
     '/api/portal/batches/:id/enterprise',
     requireAuth,
-    requireRole(['admin', 'teacher']),
+    requireRole(['admin', 'teacher', 'branch']),
     (req: AuthedRequest, res) => {
       const db = getDb();
       const actor = req.authUser!;
@@ -699,7 +710,7 @@ export function createBatchEnterpriseRouter(
   router.get(
     '/api/portal/batches/:id/detail',
     requireAuth,
-    requireRole(['admin', 'teacher']),
+    requireRole(['admin', 'teacher', 'branch']),
     (req: AuthedRequest, res) => {
       const db = getDb();
       const actor = req.authUser!;
@@ -797,9 +808,14 @@ export function createBatchEnterpriseRouter(
         activityLogs,
         notifications,
         eligibleStudents:
-          actor.role === 'admin'
+          actor.role === 'admin' || actor.role === 'branch'
             ? db.users
-                .filter((u) => u.role === 'student' && u.status !== 'suspended')
+                .filter(
+                  (u) =>
+                    u.role === 'student' &&
+                    u.status === 'active' &&
+                    (actor.role !== 'branch' || u.branchId === batch.branchId)
+                )
                 .sort((a, b) => {
                   const aEnr = db.enrollments.some(
                     (e) =>
@@ -825,7 +841,7 @@ export function createBatchEnterpriseRouter(
   router.post(
     '/api/portal/batches/:id/students/enroll',
     requireAuth,
-    requireRole(['admin', 'teacher']),
+    requireRole(['admin', 'teacher', 'branch']),
     (req: AuthedRequest, res) => {
       const db = getDb();
       const actor = req.authUser!;
@@ -1552,7 +1568,7 @@ export function createBatchEnterpriseRouter(
   router.post(
     '/api/portal/batches/:id/attendance/bulk',
     requireAuth,
-    requireRole(['admin', 'teacher']),
+    requireRole(['admin', 'teacher', 'branch']),
     (req: AuthedRequest, res) => {
       const db = getDb();
       const actor = req.authUser!;
@@ -1634,7 +1650,7 @@ export function createBatchEnterpriseRouter(
   router.post(
     '/api/portal/batches/:id/announcements',
     requireAuth,
-    requireRole(['admin', 'teacher']),
+    requireRole(['admin', 'teacher', 'branch']),
     (req: AuthedRequest, res) => {
       const db = getDb();
       const actor = req.authUser!;
@@ -1682,7 +1698,7 @@ export function createBatchEnterpriseRouter(
   router.post(
     '/api/portal/batches/:id/notifications/remind',
     requireAuth,
-    requireRole(['admin', 'teacher']),
+    requireRole(['admin', 'teacher', 'branch']),
     (req: AuthedRequest, res) => {
       const db = getDb();
       const actor = req.authUser!;
@@ -1716,7 +1732,7 @@ export function createBatchEnterpriseRouter(
   router.patch(
     '/api/portal/batches/:id/lifecycle',
     requireAuth,
-    requireRole(['admin', 'teacher']),
+    requireRole(['admin', 'teacher', 'branch']),
     (req: AuthedRequest, res) => {
       const db = getDb();
       const actor = req.authUser!;
@@ -1814,7 +1830,7 @@ export function createBatchEnterpriseRouter(
   router.get(
     '/api/portal/batches/:id/export-students',
     requireAuth,
-    requireRole(['admin', 'teacher']),
+    requireRole(['admin', 'teacher', 'branch']),
     (req: AuthedRequest, res) => {
       const db = getDb();
       const actor = req.authUser!;
@@ -1833,14 +1849,18 @@ export function createBatchEnterpriseRouter(
   router.get(
     '/api/portal/batches/export-comparison',
     requireAuth,
-    requireRole(['admin', 'teacher']),
+    requireRole(['admin', 'teacher', 'branch']),
     (req: AuthedRequest, res) => {
       const db = getDb();
       const actor = req.authUser!;
       const scopedBatches =
         actor.role === 'teacher'
           ? getTeacherAssignedBatches(actor, db.batches, db.instructors)
-          : db.batches;
+          : actor.role === 'branch'
+            ? actor.branchId
+              ? db.batches.filter((b) => b.branchId === actor.branchId)
+              : []
+            : db.batches;
       const analytics = computeBatchDashboardAnalytics({
         batches: scopedBatches,
         courses: db.courses,

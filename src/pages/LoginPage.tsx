@@ -1,22 +1,88 @@
 import {
+  Building2,
+  CheckCircle2,
   Eye,
   EyeOff,
+  GraduationCap,
   KeyRound,
   Lock,
   LockKeyhole,
   Mail,
   Shield,
   ShieldAlert,
+  ShieldCheck,
+  UserCheck,
   UserPlus,
+  Users,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import type { UserRole } from '../types';
+
+export type AuthMode = 'login' | 'register' | 'reset';
+export type SelfRegistrableRole = 'student' | 'guardian' | 'teacher' | 'branch';
 
 interface LoginPageProps {
   navigate: (path: string) => void;
+  initialMode?: AuthMode;
+  initialRole?: UserRole;
 }
 
-export function LoginPage({ navigate }: LoginPageProps) {
+const PORTAL_ROLES: {
+  id: UserRole;
+  label: string;
+  shortDesc: string;
+  icon: typeof GraduationCap;
+  selfRegister: boolean;
+  accent: string;
+}[] = [
+  {
+    id: 'student',
+    label: 'Student',
+    shortDesc: 'Courses, live classes, exams & certificates',
+    icon: GraduationCap,
+    selfRegister: true,
+    accent: 'border-blue-500 bg-blue-50 text-blue-800',
+  },
+  {
+    id: 'guardian',
+    label: 'Guardian',
+    shortDesc: 'Monitor linked child attendance, marks & fees',
+    icon: Users,
+    selfRegister: true,
+    accent: 'border-amber-500 bg-amber-50 text-amber-800',
+  },
+  {
+    id: 'teacher',
+    label: 'Teacher',
+    shortDesc: 'Faculty lessons, batches, grading & attendance',
+    icon: UserCheck,
+    selfRegister: true,
+    accent: 'border-emerald-500 bg-emerald-50 text-emerald-800',
+  },
+  {
+    id: 'branch',
+    label: 'Branch',
+    shortDesc: 'Campus branch coordinator & local admissions',
+    icon: Building2,
+    selfRegister: true,
+    accent: 'border-cyan-500 bg-cyan-50 text-cyan-800',
+  },
+  {
+    id: 'admin',
+    label: 'Main Admin',
+    shortDesc: 'Central platform governance & approvals',
+    icon: ShieldCheck,
+    selfRegister: false,
+    accent: 'border-indigo-500 bg-indigo-50 text-indigo-800',
+  },
+];
+
+export function LoginPage({
+  navigate,
+  initialMode = 'login',
+  initialRole = 'student',
+}: LoginPageProps) {
   const {
     login,
     setupAdmin,
@@ -28,7 +94,20 @@ export function LoginPage({ navigate }: LoginPageProps) {
     authError,
   } = useAuth();
 
-  const [mode, setMode] = useState<'login' | 'register' | 'reset'>('login');
+  const normalizedInitialRole: UserRole =
+    initialMode === 'register' && initialRole === 'admin' ? 'student' : initialRole;
+
+  const [mode, setMode] = useState<AuthMode>(initialMode);
+  const [portalRole, setPortalRole] = useState<UserRole>(normalizedInitialRole);
+
+  // Sync props when navigating between /login/:role, /register/:role, /recover/:role
+  useEffect(() => {
+    setMode(initialMode);
+    setPortalRole(initialMode === 'register' && initialRole === 'admin' ? 'student' : initialRole);
+    setPendingNotice(null);
+    setLocalError(null);
+    setResetNotice(null);
+  }, [initialMode, initialRole]);
 
   // Login state (zero hardcoded credentials or demo passwords)
   const [email, setEmail] = useState('');
@@ -47,15 +126,26 @@ export function LoginPage({ navigate }: LoginPageProps) {
   const [adminConfirm, setAdminConfirm] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
 
-  // Register state (strictly Student / Guardian)
+  // Registration state for Student / Guardian / Teacher / Branch
   const [regName, setRegName] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regPhone, setRegPhone] = useState('');
   const [regPassword, setRegPassword] = useState('');
-  const [regRole, setRegRole] = useState<'student' | 'guardian'>('student');
   const [regBranchId, setRegBranchId] = useState(bootstrap?.branches[0]?.id || 'br-mirpur');
   const [regRollLink, setRegRollLink] = useState('');
   const [regStudentVerification, setRegStudentVerification] = useState('');
+  const [regSpecialty, setRegSpecialty] = useState('');
+  const [regEducation, setRegEducation] = useState('');
+  const [regBio, setRegBio] = useState('');
+  const [regBranchName, setRegBranchName] = useState('');
+  const [regBranchCode, setRegBranchCode] = useState('');
+  const [regBranchCity, setRegBranchCity] = useState('');
+  const [regBranchAddress, setRegBranchAddress] = useState('');
+  const [pendingNotice, setPendingNotice] = useState<{
+    message: string;
+    email: string;
+    role: SelfRegistrableRole;
+  } | null>(null);
 
   // Password reset state
   const [resetEmail, setResetEmail] = useState('');
@@ -69,6 +159,32 @@ export function LoginPage({ navigate }: LoginPageProps) {
     }
   }, [bootstrap?.branches, regBranchId]);
 
+  const activeRoleMeta =
+    PORTAL_ROLES.find((r) => r.id === portalRole) ?? PORTAL_ROLES[0];
+  const regRole: SelfRegistrableRole =
+    portalRole === 'admin' ? 'student' : portalRole;
+
+  const handleSelectRole = (nextRole: UserRole) => {
+    setPortalRole(nextRole);
+    setLocalError(null);
+    setNeeds2fa(false);
+    setPendingNotice(null);
+    if (mode === 'register' && nextRole === 'admin') {
+      setMode('login');
+    }
+  };
+
+  const handleSwitchMode = (nextMode: AuthMode) => {
+    setMode(nextMode);
+    setLocalError(null);
+    setResetNotice(null);
+    setPendingNotice(null);
+    setNeeds2fa(false);
+    if (nextMode === 'register' && portalRole === 'admin') {
+      setPortalRole('student');
+    }
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLocalError(null);
@@ -76,7 +192,8 @@ export function LoginPage({ navigate }: LoginPageProps) {
     const res = await login(
       email,
       password,
-      needs2fa ? { totpCode: totpCode.trim(), recoveryCode: recoveryCode.trim() } : undefined
+      needs2fa ? { totpCode: totpCode.trim(), recoveryCode: recoveryCode.trim() } : undefined,
+      portalRole
     );
     setSubmitting(false);
     if (res.requires2fa) {
@@ -109,19 +226,40 @@ export function LoginPage({ navigate }: LoginPageProps) {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setLocalError(null);
+    setPendingNotice(null);
     setSubmitting(true);
-    const ok = await register({
+    const res = await register({
       name: regName,
       email: regEmail,
       phone: regPhone,
       password: regPassword,
       role: regRole,
-      branchId: regBranchId,
-      studentRollToLink: regRollLink,
-      studentVerification: regStudentVerification,
+      branchId: regRole === 'branch' ? undefined : regBranchId,
+      branchName: regRole === 'branch' ? regBranchName : undefined,
+      branchCode: regRole === 'branch' ? regBranchCode : undefined,
+      branchCity: regRole === 'branch' ? regBranchCity : undefined,
+      branchAddress: regRole === 'branch' ? regBranchAddress : undefined,
+      subjectSpecialty: regRole === 'teacher' ? regSpecialty : undefined,
+      education: regRole === 'teacher' ? regEducation : undefined,
+      bio: regRole === 'teacher' || regRole === 'branch' ? regBio : undefined,
+      studentRollToLink: regRole === 'guardian' ? regRollLink : undefined,
+      studentVerification: regRole === 'guardian' ? regStudentVerification : undefined,
     });
     setSubmitting(false);
-    if (ok) navigate('/portal');
+    if (res.ok) {
+      if (res.pendingApproval) {
+        setPendingNotice({
+          message:
+            res.message ||
+            'Your registration was received and is awaiting Main Admin approval.',
+          email: regEmail.trim().toLowerCase(),
+          role: regRole,
+        });
+        setRegPassword('');
+      } else {
+        navigate('/portal');
+      }
+    }
   };
 
   const handleRequestReset = async (e: React.FormEvent) => {
@@ -129,7 +267,7 @@ export function LoginPage({ navigate }: LoginPageProps) {
     setLocalError(null);
     setResetNotice(null);
     setSubmitting(true);
-    const msg = await requestPasswordReset(resetEmail);
+    const msg = await requestPasswordReset(resetEmail, portalRole);
     setSubmitting(false);
     if (msg) setResetNotice(msg);
   };
@@ -142,7 +280,9 @@ export function LoginPage({ navigate }: LoginPageProps) {
     const ok = await confirmPasswordReset(resetToken, resetNewPass);
     setSubmitting(false);
     if (ok) {
-      setResetNotice('Password updated. You may now sign in with your new password.');
+      setResetNotice('Password updated successfully. You may now sign in.');
+      setResetToken('');
+      setResetNewPass('');
       setMode('login');
     }
   };
@@ -150,7 +290,7 @@ export function LoginPage({ navigate }: LoginPageProps) {
   const brandName = bootstrap?.settings?.brandName || 'Aloms English Center';
   const logoUrl = bootstrap?.settings?.logoUrl || '/images/aec-logo.png';
 
-  if (setupRequired) {
+  if (setupRequired && mode === 'login' && portalRole === 'admin') {
     return (
       <div className="rm-pastel-bg flex min-h-screen items-center justify-center px-4 py-12">
         <div className="w-full max-w-md rounded-2xl bg-white p-7 shadow-[0_14px_45px_rgba(15,23,42,0.08)] sm:p-9">
@@ -257,6 +397,18 @@ export function LoginPage({ navigate }: LoginPageProps) {
               <Shield className="h-4 w-4" />
               <span>{submitting ? 'Provisioning Main Admin...' : 'Complete Main Admin Setup'}</span>
             </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setPortalRole('student');
+                setMode('login');
+                setLocalError(null);
+              }}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-100"
+            >
+              Switch to Student / Guardian / Teacher / Branch Portal
+            </button>
           </form>
         </div>
       </div>
@@ -264,9 +416,9 @@ export function LoginPage({ navigate }: LoginPageProps) {
   }
 
   return (
-    <div className="rm-pastel-bg flex min-h-screen items-center justify-center px-4 py-12">
-      <div className="w-full max-w-md rounded-2xl bg-white p-7 shadow-[0_14px_45px_rgba(15,23,42,0.08)] sm:p-9">
-        {/* Top Brand Lockup matching Screenshot 2 */}
+    <div className="rm-pastel-bg flex min-h-screen items-center justify-center px-4 py-10">
+      <div className="w-full max-w-xl rounded-3xl border border-slate-200/80 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)] sm:p-8">
+        {/* Top Brand Header */}
         <div className="text-center">
           <div className="mx-auto inline-flex items-center gap-2.5">
             <img
@@ -279,21 +431,105 @@ export function LoginPage({ navigate }: LoginPageProps) {
               {brandName}
             </span>
           </div>
-          <h1 className="mt-4 text-2xl font-extrabold text-slate-900">
-            {mode === 'login'
-              ? 'Welcome Back!'
-              : mode === 'register'
-                ? 'Create Account'
-                : 'Reset Password'}
+          <h1 className="mt-3 text-2xl font-extrabold text-slate-900">
+            {activeRoleMeta.label} Portal{' '}
+            {mode === 'login' ? 'Sign In' : mode === 'register' ? 'Registration' : 'Recovery'}
           </h1>
-          <p className="mt-1 text-xs text-slate-500">
-            {mode === 'login'
-              ? 'Please sign in to continue'
-              : mode === 'register'
-                ? 'Sign up as a student or guardian'
-                : 'Request or apply a password reset token'}
-          </p>
+          <p className="mt-1 text-xs text-slate-500">{activeRoleMeta.shortDesc}</p>
         </div>
+
+        {/* Dedicated Role Portal Tabs */}
+        <div className="mt-5">
+          <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+            Select Account Portal
+          </p>
+          <div
+            role="tablist"
+            aria-label="Account role portal selector"
+            className="grid grid-cols-2 gap-2 sm:grid-cols-5"
+          >
+            {PORTAL_ROLES.map((item) => {
+              const Icon = item.icon;
+              const disabledInRegister = mode === 'register' && !item.selfRegister;
+              const active = portalRole === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  disabled={disabledInRegister}
+                  onClick={() => handleSelectRole(item.id)}
+                  className={`flex flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2.5 text-center text-xs font-bold transition-all ${
+                    active
+                      ? `${item.accent} shadow-xs ring-1 ring-current/20`
+                      : 'border-slate-200 bg-slate-50/70 text-slate-600 hover:bg-slate-100'
+                  } ${disabledInRegister ? 'cursor-not-allowed opacity-40' : ''}`}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Mode Switcher Tabs: Sign In / Register / Recover */}
+        <div className="mt-4 grid grid-cols-3 gap-1.5 rounded-xl bg-slate-100 p-1">
+          <button
+            type="button"
+            onClick={() => handleSwitchMode('login')}
+            className={`rounded-lg py-2 text-xs font-bold transition-colors ${
+              mode === 'login'
+                ? 'bg-white text-slate-900 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Sign In
+          </button>
+          <button
+            type="button"
+            disabled={portalRole === 'admin'}
+            onClick={() => handleSwitchMode('register')}
+            className={`rounded-lg py-2 text-xs font-bold transition-colors ${
+              mode === 'register'
+                ? 'bg-white text-slate-900 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            } ${portalRole === 'admin' ? 'cursor-not-allowed opacity-45' : ''}`}
+          >
+            Register
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSwitchMode('reset')}
+            className={`rounded-lg py-2 text-xs font-bold transition-colors ${
+              mode === 'reset'
+                ? 'bg-white text-slate-900 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Recover Account
+          </button>
+        </div>
+
+        {setupRequired && (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900">
+            <span className="font-semibold">
+              Initial Main Admin password has not been provisioned yet.
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setPortalRole('admin');
+                setMode('login');
+                setLocalError(null);
+              }}
+              className="rounded-lg bg-amber-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-amber-700"
+            >
+              Setup Main Admin
+            </button>
+          </div>
+        )}
 
         {(localError || authError) && (
           <p className="mt-4 rounded-xl bg-rose-50 px-3.5 py-2.5 text-xs font-semibold text-rose-700">
@@ -306,8 +542,49 @@ export function LoginPage({ navigate }: LoginPageProps) {
           </p>
         )}
 
+        {/* Pending Approval Confirmation Card */}
+        {mode === 'register' && pendingNotice && (
+          <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-slate-900">
+            <div className="flex items-start gap-3">
+              <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+              <div className="space-y-2 text-xs">
+                <p className="text-sm font-extrabold text-amber-950">
+                  Registration Submitted — Awaiting Admin Approval
+                </p>
+                <p className="leading-relaxed text-amber-900">{pendingNotice.message}</p>
+                <p className="rounded-lg bg-white/80 px-3 py-2 font-mono-tabular text-[11px] text-slate-700">
+                  Account: <strong>{pendingNotice.email}</strong> · Role:{' '}
+                  <strong className="uppercase">{pendingNotice.role}</strong> · Status:{' '}
+                  <strong className="text-amber-700">PENDING</strong>
+                </p>
+                <div className="pt-1 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEmail(pendingNotice.email);
+                      setPendingNotice(null);
+                      setMode('login');
+                    }}
+                    className="rounded-xl bg-[#062436] px-4 py-2 text-xs font-bold text-white hover:bg-[#0b3854]"
+                  >
+                    Go to {activeRoleMeta.label} Sign In
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPendingNotice(null)}
+                    className="rounded-xl border border-amber-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-amber-100/50"
+                  >
+                    Submit Another Registration
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* LOGIN MODE */}
         {mode === 'login' && (
-          <form onSubmit={handleLogin} className="mt-6 space-y-4">
+          <form onSubmit={handleLogin} className="mt-5 space-y-4">
             <div className="relative">
               <Mail className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
@@ -318,7 +595,7 @@ export function LoginPage({ navigate }: LoginPageProps) {
                 aria-label="Email Address"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="Email Address"
+                placeholder={`${activeRoleMeta.label} Email Address`}
                 className="w-full rounded-xl border border-slate-200 py-3 pl-10 pr-4 text-sm text-slate-800 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none"
               />
             </div>
@@ -387,44 +664,44 @@ export function LoginPage({ navigate }: LoginPageProps) {
               disabled={submitting}
               className="w-full rounded-xl bg-blue-600 py-3 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-60"
             >
-              {submitting ? 'Signing In...' : needs2fa ? 'Verify 2FA & Sign In' : 'Sign In'}
+              {submitting
+                ? 'Signing In...'
+                : needs2fa
+                  ? 'Verify 2FA & Sign In'
+                  : `Sign In to ${activeRoleMeta.label} Portal`}
             </button>
 
-            <div className="space-y-2 pt-1 text-center">
+            <div className="flex items-center justify-between pt-1 text-xs">
               <button
                 type="button"
-                onClick={() => {
-                  setMode('reset');
-                  setLocalError(null);
-                }}
-                className="text-xs font-semibold text-blue-600 hover:underline"
+                onClick={() => handleSwitchMode('reset')}
+                className="font-semibold text-blue-600 hover:underline"
               >
-                Forgot your password?
+                Recover / Forgot Password?
               </button>
+              {portalRole !== 'admin' && (
+                <button
+                  type="button"
+                  onClick={() => handleSwitchMode('register')}
+                  className="font-semibold text-slate-700 hover:text-blue-600 hover:underline"
+                >
+                  Register as {activeRoleMeta.label} →
+                </button>
+              )}
             </div>
           </form>
         )}
 
-        {mode === 'register' && (
+        {/* REGISTER MODE */}
+        {mode === 'register' && !pendingNotice && (
           <form onSubmit={handleRegister} className="mt-5 space-y-3.5">
-            <div>
-              <label htmlFor="reg-role" className="mb-1 block text-xs font-bold text-slate-700">
-                Account Type
-              </label>
-              <select
-                id="reg-role"
-                value={regRole}
-                onChange={(e) => setRegRole(e.target.value as 'student' | 'guardian')}
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-              >
-                <option value="student">Student</option>
-                <option value="guardian">Guardian (Parent)</option>
-              </select>
+            <div className="rounded-xl border border-blue-100 bg-blue-50/70 px-3.5 py-2.5 text-[11px] font-semibold text-blue-900">
+              All new {activeRoleMeta.label} registrations enter Main Admin review before sign-in is activated.
             </div>
 
             <div>
               <label htmlFor="reg-name" className="mb-1 block text-xs font-bold text-slate-700">
-                Full Name
+                {regRole === 'branch' ? 'Branch Coordinator / Manager Name *' : 'Full Name *'}
               </label>
               <input
                 id="reg-name"
@@ -432,7 +709,7 @@ export function LoginPage({ navigate }: LoginPageProps) {
                 required
                 value={regName}
                 onChange={(e) => setRegName(e.target.value)}
-                placeholder="Enter full name"
+                placeholder={regRole === 'branch' ? 'Coordinator Full Name' : 'Enter full name'}
                 className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm focus:border-blue-500 focus:outline-none"
               />
             </div>
@@ -440,7 +717,7 @@ export function LoginPage({ navigate }: LoginPageProps) {
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <label htmlFor="reg-email" className="mb-1 block text-xs font-bold text-slate-700">
-                  Email
+                  Email *
                 </label>
                 <input
                   id="reg-email"
@@ -454,7 +731,7 @@ export function LoginPage({ navigate }: LoginPageProps) {
               </div>
               <div>
                 <label htmlFor="reg-phone" className="mb-1 block text-xs font-bold text-slate-700">
-                  Phone (BD)
+                  Phone (BD) *
                 </label>
                 <input
                   id="reg-phone"
@@ -468,29 +745,150 @@ export function LoginPage({ navigate }: LoginPageProps) {
               </div>
             </div>
 
-            <div>
-              <label htmlFor="reg-branch" className="mb-1 block text-xs font-bold text-slate-700">
-                Active Campus Branch
-              </label>
-              <select
-                id="reg-branch"
-                value={regBranchId}
-                onChange={(e) => setRegBranchId(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-              >
-                {(bootstrap?.branches ?? []).map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-                {(!bootstrap?.branches || bootstrap.branches.length === 0) && (
-                  <option value="online">Online / Virtual Campus</option>
-                )}
-              </select>
-            </div>
+            {/* Branch Registration Fields */}
+            {regRole === 'branch' ? (
+              <div className="space-y-3 rounded-2xl border border-cyan-200 bg-cyan-50/50 p-3.5">
+                <p className="text-xs font-extrabold text-cyan-900">
+                  New Campus Branch Details
+                </p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div>
+                    <label htmlFor="reg-branch-name" className="mb-1 block text-xs font-bold text-slate-700">
+                      Branch Name *
+                    </label>
+                    <input
+                      id="reg-branch-name"
+                      type="text"
+                      required
+                      value={regBranchName}
+                      onChange={(e) => setRegBranchName(e.target.value)}
+                      placeholder="Uttara Sector 10 Campus"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="reg-branch-code" className="mb-1 block text-xs font-bold text-slate-700">
+                      Branch Code (optional)
+                    </label>
+                    <input
+                      id="reg-branch-code"
+                      type="text"
+                      value={regBranchCode}
+                      onChange={(e) => setRegBranchCode(e.target.value.toUpperCase())}
+                      placeholder="AEC-UTT"
+                      className="font-mono-tabular w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm uppercase"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div>
+                    <label htmlFor="reg-branch-city" className="mb-1 block text-xs font-bold text-slate-700">
+                      City *
+                    </label>
+                    <input
+                      id="reg-branch-city"
+                      type="text"
+                      required
+                      value={regBranchCity}
+                      onChange={(e) => setRegBranchCity(e.target.value)}
+                      placeholder="Dhaka"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="reg-branch-address" className="mb-1 block text-xs font-bold text-slate-700">
+                      Campus Address *
+                    </label>
+                    <input
+                      id="reg-branch-address"
+                      type="text"
+                      required
+                      value={regBranchAddress}
+                      onChange={(e) => setRegBranchAddress(e.target.value)}
+                      placeholder="House 14, Road 5, Sector 10"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <label htmlFor="reg-branch" className="mb-1 block text-xs font-bold text-slate-700">
+                  Campus Branch
+                </label>
+                <select
+                  id="reg-branch"
+                  value={regBranchId}
+                  onChange={(e) => setRegBranchId(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                >
+                  {(bootstrap?.branches ?? []).map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                  {(!bootstrap?.branches || bootstrap.branches.length === 0) && (
+                    <option value="online">Online / Virtual Campus</option>
+                  )}
+                </select>
+              </div>
+            )}
 
+            {/* Teacher Registration Fields */}
+            {regRole === 'teacher' && (
+              <div className="space-y-3 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-3.5">
+                <p className="text-xs font-extrabold text-emerald-900">
+                  Faculty Credentials &amp; Subject Focus
+                </p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div>
+                    <label htmlFor="reg-specialty" className="mb-1 block text-xs font-bold text-slate-700">
+                      Teaching Specialty *
+                    </label>
+                    <input
+                      id="reg-specialty"
+                      type="text"
+                      required
+                      value={regSpecialty}
+                      onChange={(e) => setRegSpecialty(e.target.value)}
+                      placeholder="IELTS Writing & Spoken English"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="reg-education" className="mb-1 block text-xs font-bold text-slate-700">
+                      Academic Qualification *
+                    </label>
+                    <input
+                      id="reg-education"
+                      type="text"
+                      required
+                      value={regEducation}
+                      onChange={(e) => setRegEducation(e.target.value)}
+                      placeholder="MA in English (DU), IELTS 8.0"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label htmlFor="reg-bio" className="mb-1 block text-xs font-bold text-slate-700">
+                    Short Faculty Bio
+                  </label>
+                  <textarea
+                    id="reg-bio"
+                    rows={2}
+                    value={regBio}
+                    onChange={(e) => setRegBio(e.target.value)}
+                    placeholder="Experience summary or classes taught..."
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Guardian Verification Fields */}
             {regRole === 'guardian' && (
-              <div className="space-y-3">
+              <div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50/50 p-3.5">
                 <div>
                   <label htmlFor="reg-roll-link" className="mb-1 block text-xs font-bold text-slate-700">
                     Student Roll Number to Link (Optional, e.g. AEC-2026-101)
@@ -501,7 +899,7 @@ export function LoginPage({ navigate }: LoginPageProps) {
                     value={regRollLink}
                     onChange={(e) => setRegRollLink(e.target.value)}
                     placeholder="AEC-2026-101"
-                    className="font-mono-tabular w-full rounded-xl border border-slate-200 px-3 py-2 text-sm uppercase focus:border-blue-500 focus:outline-none"
+                    className="font-mono-tabular w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm uppercase focus:border-blue-500 focus:outline-none"
                   />
                 </div>
                 {regRollLink.trim() && (
@@ -519,7 +917,7 @@ export function LoginPage({ navigate }: LoginPageProps) {
                       value={regStudentVerification}
                       onChange={(e) => setRegStudentVerification(e.target.value)}
                       placeholder="017XXXXXXXX or AEC-XXXXXX"
-                      className="font-mono-tabular w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                      className="font-mono-tabular w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
                     />
                   </div>
                 )}
@@ -528,7 +926,7 @@ export function LoginPage({ navigate }: LoginPageProps) {
 
             <div>
               <label htmlFor="reg-password" className="mb-1 block text-xs font-bold text-slate-700">
-                Strong Password (min 8 chars, letters + numbers)
+                Strong Password (min 8 chars, letters + numbers) *
               </label>
               <input
                 id="reg-password"
@@ -547,16 +945,24 @@ export function LoginPage({ navigate }: LoginPageProps) {
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-sm font-bold text-white transition-colors hover:bg-blue-700 disabled:opacity-60"
             >
               <UserPlus className="h-4 w-4" />
-              <span>{submitting ? 'Creating Account...' : 'Create Account'}</span>
+              <span>
+                {submitting
+                  ? 'Submitting Registration...'
+                  : `Submit ${activeRoleMeta.label} Registration`}
+              </span>
             </button>
           </form>
         )}
 
+        {/* RECOVER / RESET PASSWORD MODE */}
         {mode === 'reset' && (
           <div className="mt-5 space-y-5">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-[11px] font-semibold text-slate-700">
+              Recovering <strong>{activeRoleMeta.label}</strong> account access. Request an email token below, or paste a reset token issued by the Main Admin.
+            </div>
             <form onSubmit={handleRequestReset} className="space-y-3">
               <label htmlFor="reset-email" className="block text-xs font-bold text-slate-700">
-                Step 1: Request Reset Token
+                Step 1: Request {activeRoleMeta.label} Recovery Token
               </label>
               <div className="flex gap-2">
                 <input
@@ -565,7 +971,7 @@ export function LoginPage({ navigate }: LoginPageProps) {
                   required
                   value={resetEmail}
                   onChange={(e) => setResetEmail(e.target.value)}
-                  placeholder="Account email address"
+                  placeholder={`${activeRoleMeta.label} email address`}
                   className="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
                 />
                 <button
@@ -622,47 +1028,7 @@ export function LoginPage({ navigate }: LoginPageProps) {
           </div>
         )}
 
-        {/* OR Divider + Switcher matching Screenshot 2 */}
-        <div className="my-6 flex items-center gap-3 text-xs font-semibold text-slate-400">
-          <span className="h-px flex-1 bg-slate-200" />
-          <span>OR</span>
-          <span className="h-px flex-1 bg-slate-200" />
-        </div>
-
-        <div className="text-center text-xs text-slate-600">
-          {mode === 'login' ? (
-            <p>
-              Don&apos;t have an account?{' '}
-              <button
-                type="button"
-                onClick={() => {
-                  setMode('register');
-                  setLocalError(null);
-                }}
-                className="font-bold text-blue-600 hover:underline"
-              >
-                Sign Up
-              </button>
-            </p>
-          ) : (
-            <p>
-              Already have an account?{' '}
-              <button
-                type="button"
-                onClick={() => {
-                  setMode('login');
-                  setNeeds2fa(false);
-                  setLocalError(null);
-                }}
-                className="font-bold text-blue-600 hover:underline"
-              >
-                Sign In
-              </button>
-            </p>
-          )}
-        </div>
-
-        <p className="mt-5 text-center text-[11px] text-slate-500">
+        <p className="mt-6 text-center text-[11px] text-slate-500">
           By continuing, you agree to our{' '}
           <a
             href="/terms-and-conditions"

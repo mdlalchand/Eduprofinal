@@ -212,6 +212,7 @@ class InstallController extends Controller
             [
                 'name' => $data['admin_name'],
                 'role' => 'admin',
+                'status' => 'active',
                 'password' => Hash::make($data['admin_password']),
             ]
         );

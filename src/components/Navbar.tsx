@@ -141,13 +141,22 @@ export function Navbar({ currentPath, navigate }: NavbarProps) {
               </button>
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={() => handleNav('/login')}
-              className="inline-flex h-9 shrink-0 items-center whitespace-nowrap rounded-full bg-indigo-50 px-3.5 text-xs font-semibold text-indigo-600 transition-colors hover:bg-indigo-100 sm:h-10 sm:px-5 sm:text-sm"
-            >
-              Login
-            </button>
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <button
+                type="button"
+                onClick={() => handleNav('/register')}
+                className="hidden h-9 shrink-0 items-center whitespace-nowrap rounded-full border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50 sm:inline-flex sm:h-10 sm:px-4 sm:text-sm"
+              >
+                Register
+              </button>
+              <button
+                type="button"
+                onClick={() => handleNav('/login')}
+                className="inline-flex h-9 shrink-0 items-center whitespace-nowrap rounded-full bg-indigo-50 px-3.5 text-xs font-semibold text-indigo-600 transition-colors hover:bg-indigo-100 sm:h-10 sm:px-5 sm:text-sm"
+              >
+                Login
+              </button>
+            </div>
           )}
 
           <button

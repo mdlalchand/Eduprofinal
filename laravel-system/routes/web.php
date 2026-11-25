@@ -32,10 +32,14 @@ Route::get('/verify-certificate', [PublicController::class, 'verifyCertificate']
 Route::post('/verify-certificate', [PublicController::class, 'lookupCertificate'])->middleware('throttle:30,5')->name('certificates.lookup');
 Route::post('/payments/webhook/{gateway}', [PublicController::class, 'paymentWebhook'])->name('payments.webhook');
 
-// Auth
-Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
+// Auth, Self-Registration & Account Recovery
+Route::get('/login/{role?}', [AuthController::class, 'showLogin'])->name('login');
+Route::get('/register/{role?}', [AuthController::class, 'showRegister'])->name('register');
+Route::get('/recover/{role?}', [AuthController::class, 'showRecover'])->name('recover');
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:15,5')->name('login.post');
 Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:15,5')->name('register.post');
+Route::post('/recover/request', [AuthController::class, 'requestPasswordReset'])->middleware('throttle:10,5')->name('recover.request');
+Route::post('/recover/confirm', [AuthController::class, 'confirmPasswordReset'])->middleware('throttle:10,5')->name('recover.confirm');
 Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 
 // Authenticated Learning, Commerce & Multi-Role Portal Routes
@@ -92,8 +96,12 @@ Route::middleware('auth')->group(function () {
             Route::patch('/connectors/{id}/status', [PortalController::class, 'toggleConnector'])->name('portal.connectors.status');
             Route::delete('/connectors/{id}', [PortalController::class, 'deleteConnector'])->name('portal.connectors.delete');
 
-            // Users, Store, Ebooks, Results, Certificates, Community, Finance
+            // Users, Approvals, Password Recovery Tokens, Store, Ebooks, Results, Certificates, Community, Finance
             Route::post('/users', [PortalController::class, 'storeUser'])->name('portal.users.store');
+            Route::patch('/users/{user}', [PortalController::class, 'updateUser'])->name('portal.users.update');
+            Route::post('/users/{user}/approve', [PortalController::class, 'approveUser'])->name('portal.users.approve');
+            Route::post('/users/{user}/reject', [PortalController::class, 'rejectUser'])->name('portal.users.reject');
+            Route::post('/users/{user}/reset-token', [PortalController::class, 'issueResetToken'])->name('portal.users.reset_token');
             Route::patch('/users/{user}/role', [PortalController::class, 'updateUserRole'])->name('portal.users.role');
             Route::delete('/users/{user}', [PortalController::class, 'deleteUser'])->name('portal.users.delete');
             Route::post('/products', [PortalController::class, 'storeProduct'])->name('portal.products.store');
@@ -127,7 +135,7 @@ Route::middleware('auth')->group(function () {
 
         Route::post('/rewards/privacy', [PortalController::class, 'toggleLeaderboardPrivacy'])->name('portal.rewards.privacy');
 
-        Route::middleware('role:admin,teacher,branch_manager')->group(function () {
+        Route::middleware('role:admin,teacher,branch')->group(function () {
             Route::get('/batches/dashboard', [BatchEnterpriseController::class, 'dashboard'])->name('portal.batches.dashboard');
             Route::post('/batches/check-conflicts', [BatchEnterpriseController::class, 'checkConflicts'])->name('portal.batches.conflicts');
             Route::post('/batches/enterprise', [BatchEnterpriseController::class, 'store'])->name('portal.batches.enterprise.store');
@@ -157,7 +165,7 @@ Route::middleware('auth')->group(function () {
             Route::post('/exams/from-bank', [PortalController::class, 'buildExamFromBank'])->name('portal.exams.from_bank');
         });
 
-        Route::middleware('role:admin,branch_manager')->group(function () {
+        Route::middleware('role:admin,branch')->group(function () {
             Route::patch('/enrollments/{enrollment}', [PortalController::class, 'decideEnrollment'])->name('portal.enrollments.decide');
             Route::patch('/orders/{order}', [PortalController::class, 'updateOrder'])->name('portal.orders.update');
             Route::post('/payroll', [PortalController::class, 'generatePayroll'])->name('portal.payroll.store');

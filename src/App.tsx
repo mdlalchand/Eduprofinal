@@ -147,8 +147,38 @@ function AppRouter() {
     if (cleanPath === '/profile') {
       return <ProfilePage navigate={navigate} />;
     }
-    if (cleanPath === '/login') {
-      return <LoginPage navigate={navigate} />;
+    if (
+      cleanPath === '/login' ||
+      cleanPath.startsWith('/login/') ||
+      cleanPath === '/register' ||
+      cleanPath.startsWith('/register/') ||
+      cleanPath === '/recover' ||
+      cleanPath.startsWith('/recover/')
+    ) {
+      const validRoles = new Set(['student', 'guardian', 'teacher', 'branch', 'admin']);
+      const segments = cleanPath.split('/').filter(Boolean);
+      const base = segments[0];
+      const segRole = segments[1] || params.get('role') || 'student';
+      const qMode = params.get('mode');
+      const initialMode =
+        base === 'register' || qMode === 'register'
+          ? 'register'
+          : base === 'recover' || qMode === 'reset' || qMode === 'recover'
+            ? 'reset'
+            : 'login';
+      const initialRole = (validRoles.has(segRole) ? segRole : 'student') as
+        | 'student'
+        | 'guardian'
+        | 'teacher'
+        | 'branch'
+        | 'admin';
+      return (
+        <LoginPage
+          navigate={navigate}
+          initialMode={initialMode}
+          initialRole={initialRole}
+        />
+      );
     }
     if (isPortal) {
       return <PortalPage navigate={navigate} />;

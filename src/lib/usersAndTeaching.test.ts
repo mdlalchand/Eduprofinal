@@ -81,6 +81,32 @@ test('filterUsersDirectory and computeUserRoleSummary filter by role, branch, st
   });
   assert.equal(suspended.length, 1);
   assert.equal(suspended[0].id, 'u-4');
+
+  const extended = [
+    ...SAMPLE_USERS,
+    {
+      id: 'u-5',
+      name: 'Banani Campus Lead',
+      email: 'banani@example.com',
+      phone: '01710000105',
+      role: 'branch' as const,
+      branchId: 'br-mirpur',
+      status: 'pending' as const,
+      createdAt: '2026-01-05T00:00:00.000Z',
+    },
+  ];
+  const extSummary = computeUserRoleSummary(extended);
+  assert.equal(extSummary.pending, 1);
+  assert.equal(extSummary.branch, 1);
+
+  const pendingBranches = filterUsersDirectory(extended, {
+    role: 'branch',
+    branchId: 'all',
+    status: 'pending',
+    search: '',
+  });
+  assert.equal(pendingBranches.length, 1);
+  assert.equal(pendingBranches[0].id, 'u-5');
 });
 
 test('formatUsersCsv neutralizes spreadsheet formula cells and maps branch names', () => {

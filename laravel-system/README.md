@@ -5,7 +5,7 @@ A complete, self-hosted, white-label LMS and Academy Operations platform built o
 ## Key Features
 - **100% White-Label Installer (`/install`)**: Configure Company Name, Tagline, Logo, Favicon, Contact Info, Currency Symbol, Student Roll/ID Prefix, Database (SQLite, MySQL/MariaDB, or PostgreSQL), and Super Admin account from a browser wizard.
 - **Zero Demo Data**: Fresh installations start completely clean—only your company branding and Super Admin account are created.
-- **Unified Multi-Role Portal (`/portal`)**: Role-based dashboards for `admin`, `branch_manager`, `teacher`, `student`, and `guardian`.
+- **Unified Multi-Role Portal (`/portal`)**: Role-based dashboards for `admin`, `branch`, `teacher`, `student`, and `guardian` with separate role registration, recovery, and Main Admin approval.
 - **Complete LMS & Operations**:
   - Branch & Category management
   - Courses, Batches, Schedules, Classrooms, Waitlists, Transfers, Attendance, and Payroll

@@ -57,7 +57,13 @@ export function resolveSessionSecret(): string {
 }
 
 export function isValidRole(role: unknown): role is UserRole {
-  return role === 'admin' || role === 'teacher' || role === 'student' || role === 'guardian';
+  return (
+    role === 'admin' ||
+    role === 'teacher' ||
+    role === 'student' ||
+    role === 'guardian' ||
+    role === 'branch'
+  );
 }
 
 export function isStrongPassword(password: string, minLength = 8): boolean {

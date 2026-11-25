@@ -73,6 +73,7 @@ export function EnrollmentsFeePanel({
 }: EnrollmentsFeePanelProps) {
   const { apiFetch } = useAuth();
   const canManage = role === 'admin';
+  const canApproveStatus = role === 'admin' || role === 'branch';
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | Enrollment['status']>('all');
@@ -546,7 +547,7 @@ export function EnrollmentsFeePanel({
                   <th className="px-3 py-2.5">Method</th>
                   <th className="px-3 py-2.5">Amount</th>
                   <th className="px-3 py-2.5">Status</th>
-                  {canManage && <th className="px-4 py-2.5">Actions</th>}
+                  {canApproveStatus && <th className="px-4 py-2.5">Actions</th>}
                 </tr>
               </thead>
               <tbody className={`divide-y ${darkMode ? 'divide-[#1E2E52]' : 'divide-slate-200/70'}`}>
@@ -603,7 +604,7 @@ export function EnrollmentsFeePanel({
                         )}
                       </td>
                       <td className="px-3 py-3">
-                        {canManage ? (
+                        {canApproveStatus ? (
                           <select
                             value={enr.status}
                             disabled={isBusy}
@@ -622,9 +623,13 @@ export function EnrollmentsFeePanel({
                             <option value="approved">APPROVED</option>
                             <option value="pending">PENDING</option>
                             <option value="rejected">REJECTED</option>
-                            <option value="cancelled">CANCELLED</option>
-                            <option value="transferred">TRANSFERRED</option>
-                            <option value="expired">EXPIRED</option>
+                            {canManage && (
+                              <>
+                                <option value="cancelled">CANCELLED</option>
+                                <option value="transferred">TRANSFERRED</option>
+                                <option value="expired">EXPIRED</option>
+                              </>
+                            )}
                           </select>
                         ) : (
                           <span
@@ -640,7 +645,7 @@ export function EnrollmentsFeePanel({
                           </span>
                         )}
                       </td>
-                      {canManage && (
+                      {canApproveStatus && (
                         <td className="px-4 py-3">
                           <div className="flex flex-wrap items-center gap-1.5">
                             {enr.status !== 'approved' && (
@@ -679,6 +684,8 @@ export function EnrollmentsFeePanel({
                                 <span>Pending</span>
                               </button>
                             )}
+                            {canManage && (
+                              <>
                             <button
                               type="button"
                               disabled={isBusy}
@@ -764,6 +771,8 @@ export function EnrollmentsFeePanel({
                               <Trash2 className="h-3 w-3" />
                               <span>{isConfirmDelete ? 'Confirm?' : 'Delete'}</span>
                             </button>
+                              </>
+                            )}
                           </div>
                         </td>
                       )}

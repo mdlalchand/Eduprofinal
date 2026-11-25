@@ -43,7 +43,16 @@ export interface PgQueryable {
   ) => Promise<{ rows: T[]; rowCount?: number | null }>;
 }
 
-const ALLOWED_ROLES = new Set(['admin', 'teacher', 'student', 'guardian']);
+const ALLOWED_ROLES = new Set(['admin', 'teacher', 'student', 'guardian', 'branch']);
+const ALLOWED_USER_STATUSES = new Set(['pending', 'active', 'suspended', 'rejected']);
+
+function normalizeUserStatus(status: unknown): 'pending' | 'active' | 'suspended' | 'rejected' {
+  const s = String(status ?? 'active');
+  return ALLOWED_USER_STATUSES.has(s)
+    ? (s as 'pending' | 'active' | 'suspended' | 'rejected')
+    : 'active';
+}
+
 const ALLOWED_BRANCH_STATUSES = new Set<BranchStatus>([
   'active',
   'inactive',
@@ -230,16 +239,18 @@ export async function persistStateToPostgresWithClient(
       await client.query(
         `INSERT INTO users (
            id, name, email, phone, role, branch_id, roll_number, guardian_linked_student_ids,
-           avatar, status, bio, subject_specialty, password_hash, must_reset_password,
-           password_updated_at, two_factor_enabled, two_factor_secret, two_factor_recovery_hashes,
-           communication_consent, last_login_at, created_at
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18::jsonb,$19::jsonb,$20,$21)
+           avatar, status, bio, subject_specialty, education, approved_at, approved_by, approval_note,
+           password_hash, must_reset_password, password_updated_at, two_factor_enabled,
+           two_factor_secret, two_factor_recovery_hashes, communication_consent, last_login_at, created_at
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22::jsonb,$23::jsonb,$24,$25)
          ON CONFLICT (id) DO UPDATE SET
            name=EXCLUDED.name, email=EXCLUDED.email, phone=EXCLUDED.phone, role=EXCLUDED.role,
            branch_id=EXCLUDED.branch_id, roll_number=EXCLUDED.roll_number,
            guardian_linked_student_ids=EXCLUDED.guardian_linked_student_ids,
            avatar=EXCLUDED.avatar, status=EXCLUDED.status, bio=EXCLUDED.bio,
-           subject_specialty=EXCLUDED.subject_specialty, password_hash=EXCLUDED.password_hash,
+           subject_specialty=EXCLUDED.subject_specialty, education=EXCLUDED.education,
+           approved_at=EXCLUDED.approved_at, approved_by=EXCLUDED.approved_by,
+           approval_note=EXCLUDED.approval_note, password_hash=EXCLUDED.password_hash,
            must_reset_password=EXCLUDED.must_reset_password, password_updated_at=EXCLUDED.password_updated_at,
            two_factor_enabled=EXCLUDED.two_factor_enabled, two_factor_secret=EXCLUDED.two_factor_secret,
            two_factor_recovery_hashes=EXCLUDED.two_factor_recovery_hashes,
@@ -255,9 +266,13 @@ export async function persistStateToPostgresWithClient(
           u.rollNumber ?? null,
           JSON.stringify(u.guardianLinkedStudentIds ?? []),
           u.avatar ?? null,
-          u.status ?? 'active',
+          normalizeUserStatus(u.status),
           u.bio ?? null,
           u.subjectSpecialty ?? null,
+          u.education ?? null,
+          u.approvedAt ?? null,
+          u.approvedBy ?? null,
+          u.approvalNote ?? null,
           u.passwordHash,
           Boolean(u.mustResetPassword),
           u.passwordUpdatedAt ?? null,
@@ -690,9 +705,13 @@ export async function loadStateFromPostgresWithClient(
       ? r.guardian_linked_student_ids.map(String)
       : [],
     avatar: r.avatar ? String(r.avatar) : undefined,
-    status: (r.status === 'suspended' ? 'suspended' : 'active') as 'active' | 'suspended',
+    status: normalizeUserStatus(r.status),
     bio: r.bio ? String(r.bio) : undefined,
     subjectSpecialty: r.subject_specialty ? String(r.subject_specialty) : undefined,
+    education: r.education ? String(r.education) : undefined,
+    approvedAt: r.approved_at ? new Date(String(r.approved_at)).toISOString() : undefined,
+    approvedBy: r.approved_by ? String(r.approved_by) : undefined,
+    approvalNote: r.approval_note ? String(r.approval_note) : undefined,
     passwordHash: String(r.password_hash ?? ''),
     mustResetPassword: Boolean(r.must_reset_password),
     passwordUpdatedAt: r.password_updated_at ? new Date(String(r.password_updated_at)).toISOString() : null,

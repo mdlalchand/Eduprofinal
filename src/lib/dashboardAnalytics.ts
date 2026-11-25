@@ -448,6 +448,7 @@ export function buildUserActivitySeries(
   const studentsCount = users.filter((u) => u.role === 'student').length;
   const teachersCount = users.filter((u) => u.role === 'teacher').length;
   const guardiansCount = users.filter((u) => u.role === 'guardian').length;
+  const branchAccountsCount = users.filter((u) => u.role === 'branch').length;
   const enrollmentsCount = (data.enrollments ?? []).length;
 
   const raw = [
@@ -455,6 +456,9 @@ export function buildUserActivitySeries(
     { id: 'enrollments', label: 'Enrollments', count: enrollmentsCount, color: '#F59E0B' },
     { id: 'teachers', label: 'Teachers', count: teachersCount, color: '#22C55E' },
     { id: 'guardians', label: 'Guardians', count: guardiansCount, color: '#7C3AED' },
+    ...(branchAccountsCount > 0
+      ? [{ id: 'branches', label: 'Branches', count: branchAccountsCount, color: '#0EA5E9' }]
+      : []),
   ];
 
   const total = Math.max(1, raw.reduce((s, r) => s + r.count, 0));
@@ -568,7 +572,7 @@ export function buildTopStudents(data: DashboardSourceData): TopStudentItem[] {
     });
   }
 
-  if (data.role === 'teacher' || data.role === 'admin') {
+  if (data.role === 'teacher' || data.role === 'admin' || data.role === 'branch') {
     const scoreByStudent = new Map<string, { name: string; roll: string; scores: number[]; avatar?: string }>();
     for (const st of students) {
       scoreByStudent.set(st.id, {
@@ -904,6 +908,62 @@ export function buildFuturisticKpiCards(data: DashboardSourceData): FuturisticKp
     ];
   }
 
+  if (data.role === 'branch') {
+    const branchStudents = users.filter((u) => u.role === 'student').length;
+    const branchTeachers = users.filter((u) => u.role === 'teacher').length;
+    const approvedEnr = enrollments.filter((e) => e.status === 'approved').length;
+    const pendingEnr = enrollments.filter((e) => e.status === 'pending').length;
+    const openBatches = batches.filter((b) => b.status !== 'closed').length;
+    const revenue = data.metrics.totalRevenue ?? enrollments.filter((e) => e.status === 'approved').reduce((s, e) => s + (e.amountPaid || 0), 0);
+
+    return [
+      {
+        id: 'students',
+        label: 'Branch Students',
+        labelBn: 'শাখার শিক্ষার্থী',
+        valueDisplay: branchStudents.toLocaleString(),
+        rawValue: branchStudents,
+        deltaPercent: `${approvedEnr} enrolled`,
+        lastMonthText: `${pendingEnr} pending admission(s)`,
+        gradient: 'from-[#1877F2] via-[#1262D6] to-[#00A8FF]',
+        iconBg: 'bg-white/20 text-white',
+      },
+      {
+        id: 'teachers',
+        label: 'Branch Faculty',
+        labelBn: 'শাখার শিক্ষক',
+        valueDisplay: branchTeachers.toLocaleString(),
+        rawValue: branchTeachers,
+        deltaPercent: `${courses.length} courses`,
+        lastMonthText: `Revenue: ৳${revenue.toLocaleString()}`,
+        gradient: 'from-[#0EA57A] via-[#10B981] to-[#2DD4BF]',
+        iconBg: 'bg-white/20 text-white',
+      },
+      {
+        id: 'courses',
+        label: 'Branch Courses',
+        labelBn: 'শাখার কোর্স',
+        valueDisplay: courses.length.toLocaleString(),
+        rawValue: courses.length,
+        deltaPercent: `${lessons.length} lessons`,
+        lastMonthText: `Campus: ${data.branch?.code || 'ACTIVE'}`,
+        gradient: 'from-[#7C3AED] via-[#8B5CF6] to-[#A855F7]',
+        iconBg: 'bg-white/20 text-white',
+      },
+      {
+        id: 'batches',
+        label: 'Branch Batches',
+        labelBn: 'শাখার ব্যাচ',
+        valueDisplay: batches.length.toLocaleString(),
+        rawValue: batches.length,
+        deltaPercent: `${openBatches} open`,
+        lastMonthText: `Seats Filled: ${batches.reduce((s, b) => s + (b.enrolledSeats || 0), 0)}`,
+        gradient: 'from-[#F97316] via-[#FB923C] to-[#F59E0B]',
+        iconBg: 'bg-white/20 text-white',
+      },
+    ];
+  }
+
   // Main Admin (100% live DB metrics, zero fake floors)
   const studentAccounts = users.filter((u) => u.role === 'student').length;
   const approvedEnr = enrollments.filter((e) => e.status === 'approved').length;
@@ -1069,6 +1129,22 @@ export function buildAnalyticsOverviewSeries(
       highlightValue: coached,
       highlightLabel: 'Students',
       seriesLabels: ['Coached Students', 'Graded Scripts', 'Lessons'],
+    };
+  }
+
+  if (data.role === 'branch') {
+    const branchStudents = (data.users ?? []).filter((u) => u.role === 'student').length;
+    const approvedEnrollments = (data.enrollments ?? []).filter((e) => e.status === 'approved').length;
+    const batchesCount = (data.batches ?? []).length;
+
+    return {
+      labels: labelsByRange,
+      studentsSeries: factorCurve.map((f) => Math.round(branchStudents * f)),
+      enrollmentsSeries: factorCurve.map((f) => Math.round(approvedEnrollments * f)),
+      viewsSeries: factorCurve.map((f) => Math.round(batchesCount * f)),
+      highlightValue: branchStudents,
+      highlightLabel: 'Branch Students',
+      seriesLabels: ['Students', 'Approved Enrollments', 'Batches'],
     };
   }
 
@@ -1353,6 +1429,36 @@ export function buildRecentActivityFeed(
         text: `Attendance recorded (${a.status}) for ${a.targetName}`,
         timeAgo: a.date,
         tone: 'blue',
+      });
+    }
+    const q = searchQuery.trim().toLowerCase();
+    const list = items.slice(0, 5);
+    return q ? list.filter((it) => it.text.toLowerCase().includes(q)) : list;
+  }
+
+  if (data.role === 'branch') {
+    for (const enr of (data.enrollments ?? []).slice(0, 2)) {
+      items.push({
+        id: `act-b-enr-${enr.id}`,
+        text: `${enr.studentName} enrolled (${enr.status}) in ${enr.courseTitle}`,
+        timeAgo: new Date(enr.enrolledAt).toLocaleDateString(),
+        tone: 'emerald',
+      });
+    }
+    for (const att of (data.attendance ?? []).slice(0, 2)) {
+      items.push({
+        id: `act-b-att-${att.id}`,
+        text: `Attendance recorded (${att.status}) for ${att.targetName}`,
+        timeAgo: att.date,
+        tone: 'blue',
+      });
+    }
+    for (const txn of (data.transactions ?? []).slice(0, 1)) {
+      items.push({
+        id: `act-b-txn-${txn.id}`,
+        text: `Branch payment ${txn.status}: ৳${txn.totalAmount.toLocaleString()}`,
+        timeAgo: new Date(txn.createdAt).toLocaleDateString(),
+        tone: 'purple',
       });
     }
     const q = searchQuery.trim().toLowerCase();

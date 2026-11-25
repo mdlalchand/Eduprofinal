@@ -118,6 +118,12 @@ test('canRoleAccessPortalSection enforces strict multi-role RBAC boundaries', ()
   assert.equal(canRoleAccessPortalSection('student', 'activity_logs'), false);
   assert.equal(canRoleAccessPortalSection('guardian', 'activity_logs'), false);
   assert.equal(canRoleAccessPortalSection('admin', 'profile'), true);
+  assert.equal(canRoleAccessPortalSection('branch', 'enrollments'), true);
+  assert.equal(canRoleAccessPortalSection('branch', 'branches'), true);
+  assert.equal(canRoleAccessPortalSection('branch', 'courses'), true);
+  assert.equal(canRoleAccessPortalSection('branch', 'users'), false);
+  assert.equal(canRoleAccessPortalSection('branch', 'settings'), false);
+  assert.equal(canRoleAccessPortalSection('branch', 'profile'), true);
   assert.equal(canRoleAccessPortalSection('branch_manager' as never, 'profile'), false);
   assert.equal(canRoleAccessPortalSection('teacher', 'profile'), true);
   assert.equal(canRoleAccessPortalSection('student', 'profile'), true);

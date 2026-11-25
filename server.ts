@@ -131,7 +131,7 @@ function getAuthenticatedUser(req: Request): StoredUser | null {
   const db = getDb();
   const user = db.users.find((u) => u.id === payload.userId) ?? null;
   if (!user || !isValidRole(user.role) || user.role !== payload.role) return null;
-  if (user.status === 'suspended') return null;
+  if (user.status === 'suspended' || user.status === 'pending' || user.status === 'rejected') return null;
   return user;
 }
 
@@ -555,7 +555,7 @@ async function startServer() {
     const email = String(req.body?.email ?? '').trim().toLowerCase();
     const phone = String(req.body?.phone ?? '').trim();
     const password = String(req.body?.password ?? '');
-    const roleInput = String(req.body?.role ?? 'student');
+    const roleInput = String(req.body?.role ?? 'student').trim().toLowerCase();
     const requestedBranchId = String(req.body?.branchId ?? '').trim();
     const studentRollToLink = String(
       req.body?.studentRollToLink ?? req.body?.studentRollLink ?? ''
@@ -578,8 +578,21 @@ async function startServer() {
       return;
     }
 
-    // Public self-registration strictly permits student or guardian only
-    const role: UserRole = roleInput === 'guardian' ? 'guardian' : 'student';
+    if (roleInput === 'admin') {
+      res.status(403).json({
+        error: 'Main Admin accounts cannot be self-registered.',
+      });
+      return;
+    }
+
+    const allowedRegisterRoles: UserRole[] = ['student', 'guardian', 'teacher', 'branch'];
+    if (!allowedRegisterRoles.includes(roleInput as UserRole)) {
+      res.status(400).json({
+        error: 'Select a valid portal role: student, guardian, teacher, or branch.',
+      });
+      return;
+    }
+    const role = roleInput as UserRole;
 
     const db = getDb();
     if (db.users.some((u) => u.email.toLowerCase() === email)) {
@@ -587,13 +600,57 @@ async function startServer() {
       return;
     }
 
-    const activeFallback = db.branches.find((b) => b.status === 'active')?.id ?? 'online';
-    const branchId = requestedBranchId || activeFallback;
-    if (branchId !== 'online') {
-      const branchCheck = assertBranchOperationalForTransactions(branchId);
-      if (!branchCheck.ok) {
-        res.status(403).json({ error: branchCheck.error });
+    const now = new Date().toISOString();
+    let branchId = '';
+    let createdBranch: Branch | undefined;
+
+    if (role === 'branch') {
+      const branchName = String(req.body?.branchName ?? '').trim().slice(0, 120);
+      const rawCode = String(req.body?.branchCode ?? '').trim().toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 16);
+      const branchCity = String(req.body?.branchCity ?? req.body?.city ?? '').trim().slice(0, 80);
+      const branchAddress = String(req.body?.branchAddress ?? req.body?.address ?? '').trim().slice(0, 220);
+
+      if (!branchName || branchName.length < 2 || !branchCity || !branchAddress) {
+        res.status(400).json({
+          error: 'Branch registration requires Branch Name, City, and Campus Address.',
+        });
         return;
+      }
+
+      const derivedPrefix = branchName
+        .replace(/[^A-Za-z0-9]/g, '')
+        .toUpperCase()
+        .slice(0, 3) || 'BRN';
+      const branchCode = rawCode || `${derivedPrefix}-${String(db.branches.length + 101)}`;
+      if (db.branches.some((b) => b.code.toUpperCase() === branchCode)) {
+        res.status(409).json({ error: `Branch code "${branchCode}" already exists. Choose a unique code.` });
+        return;
+      }
+
+      createdBranch = {
+        id: `br-${Date.now()}-${crypto.randomBytes(2).toString('hex')}`,
+        name: branchName,
+        code: branchCode,
+        city: branchCity,
+        address: branchAddress,
+        phone,
+        managerName: name,
+        activeStudents: 0,
+        status: 'inactive',
+        createdAt: now,
+        updatedAt: now,
+      };
+      db.branches.push(createdBranch);
+      branchId = createdBranch.id;
+    } else {
+      const activeFallback = db.branches.find((b) => b.status === 'active')?.id ?? 'online';
+      branchId = requestedBranchId || activeFallback;
+      if (branchId !== 'online') {
+        const branchCheck = assertBranchOperationalForTransactions(branchId);
+        if (!branchCheck.ok) {
+          res.status(403).json({ error: branchCheck.error });
+          return;
+        }
       }
     }
 
@@ -635,6 +692,15 @@ async function startServer() {
 
     const rollNumber =
       role === 'student' ? `AEC-2026-${100 + db.users.length + 1}` : undefined;
+    const subjectSpecialty =
+      role === 'teacher'
+        ? String(req.body?.subjectSpecialty ?? '').trim().slice(0, 120) || 'English Language'
+        : undefined;
+    const education =
+      role === 'teacher'
+        ? String(req.body?.education ?? '').trim().slice(0, 140) || undefined
+        : undefined;
+    const bio = req.body?.bio ? String(req.body.bio).trim().slice(0, 300) : undefined;
 
     const newUser: StoredUser = {
       id: `u-${Date.now()}-${crypto.randomBytes(2).toString('hex')}`,
@@ -642,40 +708,62 @@ async function startServer() {
       email,
       phone,
       role,
-      branchId,
-      status: 'active',
+      branchId: branchId || null,
+      status: 'pending',
       rollNumber,
+      subjectSpecialty,
+      education,
+      bio,
       guardianLinkedStudentIds,
       passwordHash: hashPassword(password),
-      passwordUpdatedAt: new Date().toISOString(),
+      passwordUpdatedAt: now,
       communicationConsent: { email: true, sms: true, whatsapp: true },
-      createdAt: new Date().toISOString(),
+      createdAt: now,
     };
 
     db.users.push(newUser);
+    const adminUser = db.users.find((u) => u.role === 'admin');
+    if (adminUser) {
+      db.inAppNotifications.unshift({
+        id: `notif-${Date.now()}-${crypto.randomBytes(2).toString('hex')}`,
+        userId: adminUser.id,
+        title: `New ${role.toUpperCase()} Registration Pending Approval`,
+        message: `${newUser.name} (${maskEmailForAudit(newUser.email)}) submitted a ${role} account request${createdBranch ? ` for campus "${createdBranch.name}"` : ''}. Review in Users & Roles.`,
+        type: role === 'branch' ? 'branch' : 'info',
+        read: false,
+        createdAt: now,
+      });
+    }
+
     recordAuditLog(
       db,
       newUser,
-      'USER_REGISTER',
+      'USER_REGISTER_PENDING',
       maskEmailForAudit(newUser.email),
-      `Registered new ${role} account (${branchId})`
+      `Submitted ${role} registration awaiting Main Admin approval (${branchId || 'global'})`
     );
     saveDb(db);
 
-    const token = signSessionToken(newUser.id, newUser.role);
-    createSessionRecord({
-      userId: newUser.id,
-      rawToken: token,
-      ipAddress: getClientIp(req),
-      userAgent: String(req.headers['user-agent'] ?? 'unknown'),
+    res.status(201).json({
+      ok: true,
+      pendingApproval: true,
+      user: sanitizeUser(newUser),
+      branch: createdBranch,
+      message:
+        role === 'branch'
+          ? 'Branch & coordinator registration submitted! Your campus and account are awaiting Main Admin approval before sign-in.'
+          : 'Registration submitted! Your account is awaiting Main Admin approval before sign-in.',
     });
-    setAuthSessionCookie(req, res, token);
-    res.status(201).json({ token, user: sanitizeUser(newUser) });
   });
 
   app.post('/api/auth/login', (req, res) => {
     const email = String(req.body?.email ?? '').trim().toLowerCase();
     const password = String(req.body?.password ?? '');
+    const expectedRoleRaw = req.body?.expectedRole ?? req.body?.portalRole;
+    const expectedRole =
+      typeof expectedRoleRaw === 'string' && expectedRoleRaw.trim()
+        ? expectedRoleRaw.trim().toLowerCase()
+        : '';
     const totpCode = String(req.body?.totpCode ?? '').trim();
     const recoveryCode = String(req.body?.recoveryCode ?? '').trim().toUpperCase();
 
@@ -732,6 +820,46 @@ async function startServer() {
       );
       saveDb(db);
       res.status(401).json({ error: 'Invalid email or password' });
+      return;
+    }
+
+    if (expectedRole && isValidRole(expectedRole) && user.role !== expectedRole) {
+      res.status(403).json({
+        error: `This sign-in portal is dedicated to ${expectedRole} accounts. Please switch to the ${user.role} portal tab.`,
+      });
+      return;
+    }
+
+    if (user.status === 'pending') {
+      recordAuditLog(
+        db,
+        user,
+        'USER_LOGIN_BLOCKED',
+        maskEmailForAudit(user.email),
+        'Pending account login attempt before Main Admin approval',
+        'warning'
+      );
+      saveDb(db);
+      res.status(403).json({
+        error:
+          'Your account is pending Main Admin approval. Please wait until an administrator approves your registration.',
+      });
+      return;
+    }
+
+    if (user.status === 'rejected') {
+      recordAuditLog(
+        db,
+        user,
+        'USER_LOGIN_BLOCKED',
+        maskEmailForAudit(user.email),
+        'Declined account login attempt',
+        'warning'
+      );
+      saveDb(db);
+      res.status(403).json({
+        error: `Your registration request was declined by Main Admin.${user.approvalNote ? ` Note: ${user.approvalNote}` : ''}`,
+      });
       return;
     }
 
@@ -822,12 +950,23 @@ async function startServer() {
 
   app.post('/api/auth/password-reset/request', async (req, res) => {
     const email = String(req.body?.email ?? '').trim().toLowerCase();
+    const expectedRoleRaw = req.body?.expectedRole ?? req.body?.portalRole;
+    const expectedRole =
+      typeof expectedRoleRaw === 'string' && expectedRoleRaw.trim()
+        ? expectedRoleRaw.trim().toLowerCase()
+        : '';
     if (!email) {
       res.status(400).json({ error: 'Email address is required.' });
       return;
     }
     const db = getDb();
-    const user = db.users.find((u) => u.email.toLowerCase() === email && u.status !== 'suspended');
+    const user = db.users.find(
+      (u) =>
+        u.email.toLowerCase() === email &&
+        (!expectedRole || !isValidRole(expectedRole) || u.role === expectedRole) &&
+        u.status !== 'suspended' &&
+        u.status !== 'rejected'
+    );
     if (user) {
       const rawToken = createPasswordResetToken(user.id);
       const appUrl = process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`;
@@ -836,20 +975,33 @@ async function startServer() {
         recipient: user.email,
         recipientUserId: user.id,
         subject: 'EDUPro Password Reset Request',
-        message: `Reset token: ${rawToken}\nUse this token on ${appUrl}/login within 30 minutes to set a new password.`,
+        message: `Reset token (${user.role} portal): ${rawToken}\nUse this token on ${appUrl}/recover/${user.role} within 30 minutes to set a new password.`,
       });
+      const adminUser = db.users.find((u) => u.role === 'admin');
+      if (adminUser && adminUser.id !== user.id) {
+        db.inAppNotifications.unshift({
+          id: `notif-${Date.now()}-${crypto.randomBytes(2).toString('hex')}`,
+          userId: adminUser.id,
+          title: `Password Recovery Request (${user.role.toUpperCase()})`,
+          message: `${user.name} (${maskEmailForAudit(user.email)}) requested account recovery. You can issue a reset token from Users & Roles.`,
+          type: user.role === 'branch' ? 'branch' : 'info',
+          read: false,
+          createdAt: new Date().toISOString(),
+        });
+      }
       recordAuditLog(
         db,
         user,
         'PASSWORD_RESET_REQUEST',
         maskEmailForAudit(user.email),
-        'Password reset token generated and dispatched'
+        `Password reset token generated for ${user.role} portal`
       );
       saveDb(db);
     }
     res.json({
       ok: true,
-      message: 'If an active account matches that email, password reset instructions have been processed.',
+      message:
+        'If a matching account exists in this role portal, recovery instructions have been processed.',
     });
   });
 
@@ -1653,6 +1805,83 @@ async function startServer() {
       });
     }
 
+    if (user.role === 'branch') {
+      const userBranch = db.branches.find((b) => b.id === user.branchId) ?? null;
+      const bId = userBranch?.id ?? user.branchId ?? '';
+      const scopedBatches = db.batches.filter((b) => b.branchId === bId);
+      const scopedBatchIdSet = new Set(scopedBatches.map((b) => b.id));
+      const scopedEnrollments = db.enrollments.filter((e) => e.branchId === bId);
+      const scopedCourseIds = new Set<string>([
+        ...db.courses.filter((c) => c.branchIds.includes(bId)).map((c) => c.id),
+        ...scopedBatches.map((b) => b.courseId),
+      ]);
+      const scopedCourses = db.courses.filter((c) => scopedCourseIds.has(c.id));
+      const scopedLessons = db.lessons.filter((l) => scopedCourseIds.has(l.courseId));
+      const scopedUsers = db.users
+        .filter((u) => u.id === user.id || (u.branchId === bId && u.role !== 'admin'))
+        .map(sanitizeUser);
+      const scopedUserIdSet = new Set(scopedUsers.map((u) => u.id));
+      const scopedAttendance = db.attendance.filter(
+        (a) => a.branchId === bId || (a.batchId && scopedBatchIdSet.has(a.batchId))
+      );
+      const scopedTransactions = db.transactions.filter(
+        (t) =>
+          t.branchId === bId ||
+          scopedEnrollments.some((e) => e.id === t.referenceId)
+      );
+      const scopedFinancialRecords = db.financialRecords.filter((f) => f.branchId === bId);
+      const scopedOrders = db.orders.filter(
+        (o) => scopedUserIdSet.has(o.userId)
+      );
+      const scopedExams = db.exams.filter((ex) => !ex.courseId || scopedCourseIds.has(ex.courseId));
+      const scopedExamAttempts = db.examAttempts.filter(
+        (a) => a.branchId === bId || scopedUserIdSet.has(a.userId)
+      );
+      const branchRevenue = scopedEnrollments
+        .filter((e) => e.status === 'approved')
+        .reduce((s, e) => s + (e.amountPaid || 0), 0);
+
+      return res.json({
+        role: user.role,
+        branch: userBranch ?? undefined,
+        metrics: {
+          totalStudents: scopedUsers.filter((u) => u.role === 'student').length,
+          totalTeachers: scopedUsers.filter((u) => u.role === 'teacher').length,
+          totalCourses: scopedCourses.length,
+          totalBatches: scopedBatches.length,
+          totalRevenue: branchRevenue,
+          pendingApprovals: scopedEnrollments.filter((e) => e.status === 'pending').length,
+          mediaCount: db.mediaAssets.filter((m) => m.uploadedByUserId === user.id).length,
+        },
+        branches: userBranch ? [userBranch] : [],
+        courses: scopedCourses,
+        batches: scopedBatches,
+        batchWaitlists: db.batchWaitlists.filter((w) => scopedBatchIdSet.has(w.batchId)),
+        batchTransfers: db.batchTransfers.filter(
+          (t) => (t.fromBatchId && scopedBatchIdSet.has(t.fromBatchId)) || scopedBatchIdSet.has(t.toBatchId)
+        ),
+        batchNotifications: db.batchNotifications.filter((n) => scopedBatchIdSet.has(n.batchId)),
+        batchActivityLogs: db.batchActivityLogs.filter((l) => scopedBatchIdSet.has(l.batchId)),
+        modules: db.modules.filter((m) => scopedCourseIds.has(m.courseId)),
+        chapters: db.chapters.filter((ch) => scopedCourseIds.has(ch.courseId)),
+        lessons: scopedLessons,
+        assignments: db.assignments.filter((a) => scopedCourseIds.has(a.courseId)),
+        assignmentSubmissions: db.assignmentSubmissions.filter((s) => scopedCourseIds.has(s.courseId)),
+        announcements: db.announcements.filter((a) => scopedCourseIds.has(a.courseId)),
+        certificates: db.certificates.filter((c) => scopedCourseIds.has(c.courseId)),
+        exams: scopedExams,
+        examAttempts: scopedExamAttempts,
+        users: scopedUsers,
+        enrollments: scopedEnrollments,
+        orders: scopedOrders,
+        attendance: scopedAttendance,
+        financialRecords: scopedFinancialRecords,
+        transactions: scopedTransactions,
+        instructors: db.instructors.filter((ins) => ins.branchId === bId || ins.panel === 'Head Faculty'),
+        payrolls: db.payrolls.filter((p) => p.branchId === bId),
+      });
+    }
+
     // Student
     const nowMs = Date.now();
     const myEnrollments = db.enrollments.filter((e) => e.userId === user.id);
@@ -2397,11 +2626,18 @@ async function startServer() {
   app.post(
     '/api/portal/batches',
     requireAuth,
-    requireRole(['admin', 'teacher']),
+    requireRole(['admin', 'teacher', 'branch']),
     (req: AuthedRequest, res) => {
       const db = getDb();
       const actor = req.authUser!;
       const parsed = parseBatchPayload((req.body ?? {}) as Record<string, unknown>, db);
+      if (actor.role === 'branch') {
+        if (!actor.branchId) {
+          res.status(403).json({ error: 'Branch coordinator account is not linked to a campus.' });
+          return;
+        }
+        parsed.branchId = actor.branchId;
+      }
       if (!parsed.courseId || !parsed.name || !parsed.code) {
         res.status(400).json({ error: 'Course, batch name, and batch code are required' });
         return;
@@ -2434,7 +2670,7 @@ async function startServer() {
   app.put(
     '/api/portal/batches/:id',
     requireAuth,
-    requireRole(['admin', 'teacher']),
+    requireRole(['admin', 'teacher', 'branch']),
     (req: AuthedRequest, res) => {
       const db = getDb();
       const actor = req.authUser!;
@@ -2444,12 +2680,19 @@ async function startServer() {
         return;
       }
       const existing = db.batches[idx];
+      if (actor.role === 'branch' && existing.branchId !== actor.branchId) {
+        res.status(403).json({ error: 'Branch coordinators can only edit batches belonging to their campus.' });
+        return;
+      }
       const course = db.courses.find((c) => c.id === existing.courseId);
       if (actor.role === 'teacher' && !canTeacherManageCourse(actor, course, db.instructors, db.batches)) {
         res.status(403).json({ error: 'You are not assigned to edit batches for this course.' });
         return;
       }
       const parsed = parseBatchPayload((req.body ?? {}) as Record<string, unknown>, db, existing);
+      if (actor.role === 'branch' && actor.branchId) {
+        parsed.branchId = actor.branchId;
+      }
       if (!parsed.name || !parsed.code) {
         res.status(400).json({ error: 'Batch name and code are required' });
         return;
@@ -2470,13 +2713,17 @@ async function startServer() {
   app.patch(
     '/api/portal/batches/:id/status',
     requireAuth,
-    requireRole(['admin', 'teacher']),
+    requireRole(['admin', 'teacher', 'branch']),
     (req: AuthedRequest, res) => {
       const db = getDb();
       const actor = req.authUser!;
       const batch = db.batches.find((b) => b.id === req.params.id);
       if (!batch) {
         res.status(404).json({ error: 'Batch not found' });
+        return;
+      }
+      if (actor.role === 'branch' && batch.branchId !== actor.branchId) {
+        res.status(403).json({ error: 'Branch coordinators can only update batches belonging to their campus.' });
         return;
       }
       const course = db.courses.find((c) => c.id === batch.courseId);
@@ -3113,13 +3360,17 @@ async function startServer() {
     res.status(201).json({ branch });
   });
 
-  // Main Admin Only: Update / Edit Branch
-  app.put('/api/portal/branches/:id', requireAuth, requireRole(['admin']), (req: AuthedRequest, res) => {
+  // Main Admin (or own-campus Branch Coordinator for non-status fields): Update / Edit Branch
+  app.put('/api/portal/branches/:id', requireAuth, requireRole(['admin', 'branch']), (req: AuthedRequest, res) => {
     const actor = req.authUser!;
     const db = getDb();
     const branch = db.branches.find((b) => b.id === req.params.id);
     if (!branch) {
       res.status(404).json({ error: 'Branch not found' });
+      return;
+    }
+    if (actor.role === 'branch' && actor.branchId !== branch.id) {
+      res.status(403).json({ error: 'Branch coordinators can only modify their own campus profile.' });
       return;
     }
     const name = String(req.body?.name ?? branch.name).trim();
@@ -3146,11 +3397,12 @@ async function startServer() {
       const cleaned = sanitizeSafeUrl(String(req.body.image ?? ''), '');
       branch.image = cleaned || undefined;
     }
-    if (req.body?.activeStudents !== undefined) {
+    if (req.body?.activeStudents !== undefined && actor.role === 'admin') {
       branch.activeStudents = Math.max(0, Number(req.body.activeStudents) || 0);
     }
     const nextStatus = req.body?.status as Branch['status'] | undefined;
     if (
+      actor.role === 'admin' &&
       nextStatus &&
       ['active', 'inactive', 'suspended', 'archived'].includes(nextStatus) &&
       nextStatus !== branch.status
@@ -3177,7 +3429,7 @@ async function startServer() {
     }
     recordAuditLog(db, actor, 'BRANCH_UPDATE', branch.name, `${branch.code} (${branch.status})`);
     saveDb(db);
-    res.json({ branch, branches: db.branches });
+    res.json({ branch, branches: actor.role === 'admin' ? db.branches : [branch] });
   });
 
   // Admin: Soft-Delete Branch to Recycle Bin
@@ -3494,7 +3746,7 @@ async function startServer() {
   app.patch(
     '/api/portal/enrollments/:id',
     requireAuth,
-    requireRole(['admin']),
+    requireRole(['admin', 'branch']),
     (req: AuthedRequest, res) => {
       const user = req.authUser!;
       const status = req.body?.status as Enrollment['status'];
@@ -3507,6 +3759,10 @@ async function startServer() {
       const enrollment = db.enrollments.find((e) => e.id === req.params.id);
       if (!enrollment) {
         res.status(404).json({ error: 'Enrollment not found' });
+        return;
+      }
+      if (user.role === 'branch' && enrollment.branchId !== user.branchId) {
+        res.status(403).json({ error: 'Branch coordinators can only manage enrollments for their own campus.' });
         return;
       }
 
@@ -3646,7 +3902,7 @@ async function startServer() {
     }
   );
 
-  // Main Admin Only: Full User Management CRUD (Single Main Admin Invariant Enforced)
+  // Main Admin Only: Full User Management CRUD, Approval & Recovery Support (Single Main Admin Invariant Enforced)
   app.post('/api/portal/users', requireAuth, requireRole(['admin']), (req: AuthedRequest, res) => {
     const actor = req.authUser!;
     const name = String(req.body?.name ?? '').trim();
@@ -3654,11 +3910,21 @@ async function startServer() {
     const phone = String(req.body?.phone ?? '').trim();
     const password = String(req.body?.password ?? '');
     const role = req.body?.role;
-    const branchId = req.body?.branchId ? String(req.body.branchId) : null;
-    const status = req.body?.status === 'suspended' ? 'suspended' : 'active';
+    let branchId = req.body?.branchId ? String(req.body.branchId).trim() : null;
+    const rawStatus = String(req.body?.status ?? 'active').trim();
+    const status: StoredUser['status'] =
+      rawStatus === 'pending' || rawStatus === 'suspended' || rawStatus === 'rejected'
+        ? rawStatus
+        : 'active';
     const bio = req.body?.bio ? String(req.body.bio).trim().slice(0, 300) : undefined;
     const subjectSpecialty = req.body?.subjectSpecialty
       ? String(req.body.subjectSpecialty).trim().slice(0, 120)
+      : undefined;
+    const education = req.body?.education
+      ? String(req.body.education).trim().slice(0, 140)
+      : undefined;
+    const approvalNote = req.body?.approvalNote
+      ? String(req.body.approvalNote).trim().slice(0, 300)
       : undefined;
     const linkedIds = Array.isArray(req.body?.guardianLinkedStudentIds)
       ? req.body.guardianLinkedStudentIds.map(String)
@@ -3667,7 +3933,7 @@ async function startServer() {
         : undefined;
 
     if (!name || !email || !email.includes('@') || !isValidRole(role)) {
-      res.status(400).json({ error: 'Name, valid email, and allowed role (teacher, student, guardian) are required' });
+      res.status(400).json({ error: 'Name, valid email, and allowed role (teacher, student, guardian, branch) are required' });
       return;
     }
     if (role === 'admin') {
@@ -3692,11 +3958,44 @@ async function startServer() {
       res.status(409).json({ error: 'Email already exists' });
       return;
     }
-    if (branchId && branchId !== 'online') {
-      const branchCheck = assertBranchOperationalForTransactions(branchId);
-      if (!branchCheck.ok) {
-        res.status(403).json({ error: branchCheck.error });
+
+    const now = new Date().toISOString();
+    if (role === 'branch' && !branchId && String(req.body?.branchName ?? '').trim()) {
+      const bName = String(req.body.branchName).trim().slice(0, 120);
+      const bCode = String(req.body?.branchCode ?? '').trim().toUpperCase().slice(0, 16) || `BRN-${db.branches.length + 101}`;
+      const bCity = String(req.body?.branchCity ?? 'Dhaka').trim().slice(0, 80);
+      const bAddress = String(req.body?.branchAddress ?? 'Campus Office').trim().slice(0, 220);
+      if (db.branches.some((b) => b.code.toUpperCase() === bCode)) {
+        res.status(409).json({ error: `Branch code "${bCode}" already exists.` });
         return;
+      }
+      const newBr: Branch = {
+        id: `br-${Date.now()}-${crypto.randomBytes(2).toString('hex')}`,
+        name: bName,
+        code: bCode,
+        city: bCity,
+        address: bAddress,
+        phone: phone || '01700000000',
+        managerName: name,
+        activeStudents: 0,
+        status: status === 'active' ? 'active' : 'inactive',
+        createdAt: now,
+        updatedAt: now,
+      };
+      db.branches.push(newBr);
+      branchId = newBr.id;
+    } else if (branchId && branchId !== 'online') {
+      const targetBranch = db.branches.find((b) => b.id === branchId);
+      if (!targetBranch) {
+        res.status(404).json({ error: 'Selected branch was not found.' });
+        return;
+      }
+      if (role !== 'branch' && status === 'active') {
+        const branchCheck = assertBranchOperationalForTransactions(branchId);
+        if (!branchCheck.ok) {
+          res.status(403).json({ error: branchCheck.error });
+          return;
+        }
       }
     }
 
@@ -3713,12 +4012,16 @@ async function startServer() {
       avatar: avatar || undefined,
       bio,
       subjectSpecialty,
+      education,
+      approvedAt: status === 'active' ? now : undefined,
+      approvedBy: status === 'active' ? actor.name : undefined,
+      approvalNote,
       rollNumber: role === 'student' ? customRoll || `AEC-2026-${100 + db.users.length + 1}` : undefined,
       guardianLinkedStudentIds: role === 'guardian' ? linkedIds : undefined,
       passwordHash: hashPassword(password),
-      passwordUpdatedAt: new Date().toISOString(),
+      passwordUpdatedAt: now,
       communicationConsent: { email: true, sms: true, whatsapp: true },
-      createdAt: new Date().toISOString(),
+      createdAt: now,
     };
     db.users.push(newUser);
     recordAuditLog(db, actor, 'USER_CREATE', `${newUser.name} (${newUser.role})`, maskEmailForAudit(newUser.email));
@@ -3778,13 +4081,23 @@ async function startServer() {
     if (req.body?.branchId !== undefined) {
       target.branchId = req.body.branchId ? String(req.body.branchId) : null;
     }
-    if (req.body?.status === 'active' || req.body?.status === 'suspended') {
-      if (target.id === actor.id && req.body.status === 'suspended') {
-        res.status(400).json({ error: 'You cannot suspend your own active account' });
+    if (
+      req.body?.status === 'pending' ||
+      req.body?.status === 'active' ||
+      req.body?.status === 'suspended' ||
+      req.body?.status === 'rejected'
+    ) {
+      if (target.id === actor.id && req.body.status !== 'active') {
+        res.status(400).json({ error: 'You cannot deactivate or suspend your own active Main Admin account.' });
         return;
       }
+      const prevStatus = target.status ?? 'active';
       target.status = req.body.status;
-      if (target.status === 'suspended') {
+      if (target.status === 'active' && prevStatus !== 'active') {
+        target.approvedAt = new Date().toISOString();
+        target.approvedBy = actor.name;
+      }
+      if (target.status === 'suspended' || target.status === 'rejected' || target.status === 'pending') {
         revokeAllUserSessions(target.id);
       }
     }
@@ -3801,6 +4114,12 @@ async function startServer() {
     if (req.body?.subjectSpecialty !== undefined) {
       target.subjectSpecialty = String(req.body.subjectSpecialty).trim().slice(0, 120) || undefined;
     }
+    if (req.body?.education !== undefined) {
+      target.education = String(req.body.education).trim().slice(0, 140) || undefined;
+    }
+    if (req.body?.approvalNote !== undefined) {
+      target.approvalNote = String(req.body.approvalNote).trim().slice(0, 300) || undefined;
+    }
     if (Array.isArray(req.body?.guardianLinkedStudentIds)) {
       target.guardianLinkedStudentIds = req.body.guardianLinkedStudentIds.map(String);
     }
@@ -3814,6 +4133,35 @@ async function startServer() {
       revokeAllUserSessions(target.id);
     }
 
+    if (target.role === 'branch' && target.branchId) {
+      const linkedBranch = db.branches.find((b) => b.id === target.branchId);
+      if (linkedBranch) {
+        if (typeof req.body?.branchName === 'string' && req.body.branchName.trim()) {
+          linkedBranch.name = req.body.branchName.trim().slice(0, 120);
+        }
+        if (typeof req.body?.branchCode === 'string' && req.body.branchCode.trim()) {
+          const nextCode = req.body.branchCode.trim().toUpperCase().slice(0, 16);
+          if (!db.branches.some((b) => b.id !== linkedBranch.id && b.code.toUpperCase() === nextCode)) {
+            linkedBranch.code = nextCode;
+          }
+        }
+        if (typeof req.body?.branchCity === 'string' && req.body.branchCity.trim()) {
+          linkedBranch.city = req.body.branchCity.trim().slice(0, 80);
+        }
+        if (typeof req.body?.branchAddress === 'string' && req.body.branchAddress.trim()) {
+          linkedBranch.address = req.body.branchAddress.trim().slice(0, 220);
+        }
+        if (typeof req.body?.branchPhone === 'string' && req.body.branchPhone.trim()) {
+          linkedBranch.phone = req.body.branchPhone.trim();
+        }
+        linkedBranch.managerName = target.name;
+        if (target.status === 'active' && linkedBranch.status === 'inactive') {
+          linkedBranch.status = 'active';
+        }
+        linkedBranch.updatedAt = new Date().toISOString();
+      }
+    }
+
     recordAuditLog(
       db,
       actor,
@@ -3823,6 +4171,139 @@ async function startServer() {
     );
     saveDb(db);
     res.json({ user: sanitizeUser(target) });
+  });
+
+  app.post('/api/portal/users/:id/approve', requireAuth, requireRole(['admin']), (req: AuthedRequest, res) => {
+    const actor = req.authUser!;
+    const db = getDb();
+    const target = db.users.find((u) => u.id === req.params.id);
+    if (!target) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+    const now = new Date().toISOString();
+    const note = req.body?.note ? String(req.body.note).trim().slice(0, 300) : undefined;
+    target.status = 'active';
+    target.approvedAt = now;
+    target.approvedBy = actor.name;
+    if (note !== undefined) target.approvalNote = note;
+
+    let updatedBranch: Branch | undefined;
+    if (target.role === 'branch' && target.branchId) {
+      const linkedBranch = db.branches.find((b) => b.id === target.branchId);
+      if (linkedBranch) {
+        const prevBranchStatus = linkedBranch.status;
+        linkedBranch.status = 'active';
+        linkedBranch.managerName = target.name;
+        linkedBranch.updatedAt = now;
+        linkedBranch.archivedAt = null;
+        if (prevBranchStatus !== 'active') {
+          db.branchStatusHistory.unshift({
+            id: `bsh-${Date.now()}-${crypto.randomBytes(2).toString('hex')}`,
+            branchId: linkedBranch.id,
+            branchName: linkedBranch.name,
+            previousStatus: prevBranchStatus,
+            newStatus: 'active',
+            reason: note || `Approved branch registration for ${target.name}`,
+            actorId: actor.id,
+            actorName: actor.name,
+            createdAt: now,
+          });
+        }
+        updatedBranch = linkedBranch;
+      }
+    }
+
+    if (target.role === 'teacher' && !db.instructors.some((ins) => ins.userId === target.id)) {
+      db.instructors.push({
+        id: `inst-${Date.now()}-${crypto.randomBytes(2).toString('hex')}`,
+        userId: target.id,
+        name: target.name,
+        subject: target.subjectSpecialty || 'English Grammar & Spoken',
+        roleTitle: 'Faculty Member',
+        education: target.education || 'Certified Faculty',
+        panel: target.branchId && target.branchId !== 'online' ? 'Branch Faculty' : 'Head Faculty',
+        branchId: target.branchId || 'online',
+        bio: target.bio || `${target.subjectSpecialty || 'English'} instructor.`,
+        avatar: target.avatar || '/src/assets/images/avatar_instructor_male_1795437875493.jpg',
+      });
+    }
+
+    db.inAppNotifications.unshift({
+      id: `notif-${Date.now()}-${crypto.randomBytes(2).toString('hex')}`,
+      userId: target.id,
+      title: 'Account Approved',
+      message: `Your ${target.role} account has been approved by Main Admin. You may now sign in.`,
+      type: target.role === 'branch' ? 'branch' : 'info',
+      read: false,
+      createdAt: now,
+    });
+
+    recordAuditLog(
+      db,
+      actor,
+      'USER_APPROVED',
+      `${target.name} (${target.role})`,
+      `Approved by ${actor.name}${updatedBranch ? ` · Campus ${updatedBranch.name} activated` : ''}`
+    );
+    saveDb(db);
+    res.json({ user: sanitizeUser(target), branch: updatedBranch });
+  });
+
+  app.post('/api/portal/users/:id/reject', requireAuth, requireRole(['admin']), (req: AuthedRequest, res) => {
+    const actor = req.authUser!;
+    const db = getDb();
+    const target = db.users.find((u) => u.id === req.params.id);
+    if (!target) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+    if (target.role === 'admin' || target.id === actor.id) {
+      res.status(403).json({ error: 'Cannot reject the Main Admin account.' });
+      return;
+    }
+    const reason = String(req.body?.reason ?? 'Registration did not meet verification requirements.').trim().slice(0, 300);
+    target.status = 'rejected';
+    target.approvalNote = reason;
+    revokeAllUserSessions(target.id);
+
+    recordAuditLog(
+      db,
+      actor,
+      'USER_REJECTED',
+      `${target.name} (${target.role})`,
+      reason,
+      'warning'
+    );
+    saveDb(db);
+    res.json({ user: sanitizeUser(target) });
+  });
+
+  app.post('/api/portal/users/:id/issue-reset-token', requireAuth, requireRole(['admin']), (req: AuthedRequest, res) => {
+    const actor = req.authUser!;
+    const db = getDb();
+    const target = db.users.find((u) => u.id === req.params.id);
+    if (!target) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+    const resetToken = createPasswordResetToken(target.id);
+    recordAuditLog(
+      db,
+      actor,
+      'ADMIN_ISSUED_RESET_TOKEN',
+      `${target.name} (${target.role})`,
+      maskEmailForAudit(target.email),
+      'warning'
+    );
+    saveDb(db);
+    res.json({
+      ok: true,
+      resetToken,
+      expiresInMinutes: 30,
+      email: target.email,
+      role: target.role,
+    });
   });
 
   app.delete('/api/portal/users/:id', requireAuth, requireRole(['admin']), (req: AuthedRequest, res) => {
