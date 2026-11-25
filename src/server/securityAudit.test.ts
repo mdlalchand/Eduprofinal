@@ -371,6 +371,33 @@ describe('Public API Redaction, Student Data Access & Rate Limiting', () => {
     }
   });
 
+  test('production PostgreSQL connections reject disabled or unverified TLS modes', async () => {
+    const { parsePgSslConfig } = await import('./envConfig');
+    const previousNodeEnv = process.env.NODE_ENV;
+    try {
+      process.env.NODE_ENV = 'production';
+      assert.throws(
+        () => parsePgSslConfig('disable', 'postgresql://user:pass@db.example.com:5432/app'),
+        /not permitted for a remote production database/i
+      );
+      assert.throws(
+        () => parsePgSslConfig('no-verify', 'postgresql://user:pass@db.example.com:5432/app'),
+        /not permitted for a remote production database/i
+      );
+      assert.throws(
+        () => parsePgSslConfig(undefined, 'postgresql://user:pass@db.example.com:5432/app?sslmode=prefer'),
+        /not permitted for a remote production database/i
+      );
+      assert.deepEqual(
+        parsePgSslConfig('verify-full', 'postgresql://user:pass@db.example.com:5432/app'),
+        { rejectUnauthorized: true }
+      );
+    } finally {
+      if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previousNodeEnv;
+    }
+  });
+
   test('resolveSessionSecret requires a 32+ char secret in production unless fallback opted in', async () => {
     const { resetResolvedSessionSecretForTests, resolveSessionSecret } = await import('./security');
     const prevEnv = process.env.NODE_ENV;
