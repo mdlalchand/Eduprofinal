@@ -11,7 +11,8 @@ import type {
 
 export function createDefaultIntegrations(): IntegrationConfig[] {
   const now = new Date().toISOString();
-  const hasAiProviderEnv = Boolean(process.env.AI_API_KEY && process.env.GEMINI_API_KEY.trim().length > 8);
+  const aiApiKey = process.env.AI_API_KEY ?? '';
+  const hasAiProviderEnv = aiApiKey.trim().length > 8;
   const hasSmtpEnv = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
   const hasBkashEnv = Boolean(process.env.BKASH_APP_KEY && process.env.BKASH_APP_SECRET);
   const hasNagadEnv = Boolean(process.env.NAGAD_MERCHANT_ID && process.env.NAGAD_PRIVATE_KEY);
