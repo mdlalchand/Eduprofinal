@@ -21,7 +21,8 @@
             </div>
             <div>
                 <label for="email" class="block text-xs font-semibold text-slate-700 mb-1">Email address</label>
-                <input id="email" type="email" name="email" required value="{{ old('email', $user->email) }}" class="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm">
+                <input id="email" type="email" value="{{ $user->email }}" readonly aria-readonly="true" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-500">
+                <p class="mt-1 text-[11px] text-slate-500">Email changes require a verified account recovery process.</p>
             </div>
             <div>
                 <label for="phone" class="block text-xs font-semibold text-slate-700 mb-1">Phone</label>
