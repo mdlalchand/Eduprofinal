@@ -149,7 +149,7 @@ class InstallController extends Controller
         $envLines[] = 'SESSION_ENCRYPT=true';
         $envLines[] = 'SESSION_HTTP_ONLY=true';
         $envLines[] = 'SESSION_SAME_SITE=lax';
-        $envLines[] = 'SESSION_SECURE_COOKIE=' . ($isHttps ? 'true' : 'false');
+        $envLines[] = 'SESSION_SECURE_COOKIE=true';
         $envLines[] = 'CACHE_STORE=database';
         $envLines[] = 'QUEUE_CONNECTION=database';
 
