@@ -80,7 +80,7 @@ jobs:
           zip -qr public/downloads/academy-lms-laravel13.zip . \
             -x '.env' '.env.local' '.env.production' '.env.staging' 'vendor/*' '.git/*' 'storage/installed.lock' 'storage/logs/*' 'storage/framework/cache/*' 'storage/framework/sessions/*' 'storage/framework/views/*' 'storage/framework/testing/*' 'bootstrap/cache/*.php' 'public/downloads/*'
           unzip -t public/downloads/academy-lms-laravel13.zip
-          ! unzip -l public/downloads/academy-lms-laravel13.zip | grep -qE '(^|/)(\.env|storage/installed\.lock)'
+          ! unzip -l public/downloads/academy-lms-laravel13.zip | grep -qE '(^|/)\.env$|(^|/)storage/installed\.lock$'
 
       - uses: actions/upload-artifact@v4
         with:
