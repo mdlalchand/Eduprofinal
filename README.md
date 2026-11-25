@@ -36,6 +36,8 @@ See `laravel-system/README_INSTALL.md` and `DEPLOYMENT.md` for complete deployme
 
 ## Quick Start — Preview Workspace (Node.js)
 
+This workspace is for local UI preview, development utilities, and installer delivery only. Production requests, identity, data mutations, payment settlement, and migrations must be served by Laravel. Do not deploy the Express API as the production backend.
+
 1. Install dependencies:
    ```bash
    bun install
