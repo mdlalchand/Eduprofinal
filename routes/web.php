@@ -72,6 +72,11 @@ Route::middleware('auth')->group(function () {
         Route::get('/', [PortalController::class, 'index'])->name('portal.index');
 
         Route::middleware('role:admin')->group(function () {
+            Route::post('/content-pages', [PortalController::class, 'storeCustomPage'])->name('portal.content_pages.store');
+            Route::delete('/content-pages/{slug}', [PortalController::class, 'deleteCustomPage'])->name('portal.content_pages.delete');
+            Route::patch('/contact-inquiries/{inquiry}/status', [PortalController::class, 'updateContactInquiryStatus'])->name('portal.contact_inquiries.status');
+            Route::delete('/contact-inquiries/{inquiry}', [PortalController::class, 'deleteContactInquiry'])->name('portal.contact_inquiries.delete');
+
             // White-Label Branding & Self-Serve Config
             Route::post('/branding', [PortalController::class, 'updateBranding'])->name('portal.branding.update');
 
