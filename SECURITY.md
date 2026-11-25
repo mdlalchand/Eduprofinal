@@ -1,17 +1,8 @@
 # Security Policy
 
-## Platform Security Controls
-- **Primary Production Backend (`laravel-system/`)**:
-  - Encrypted, HTTP-only, SameSite-protected sessions (`SESSION_ENCRYPT=true`, `SESSION_HTTP_ONLY=true`, HTTPS-aware `SESSION_SECURE_COOKIE`).
-  - Database TLS configuration (`DB_SSLMODE`, `DB_SSLROOTCERT`, `MYSQL_ATTR_SSL_CA`, `MYSQL_ATTR_SSL_VERIFY_SERVER_CERT`).
-  - Installer routes (`/install*`) permanently lock once `storage/installed.lock` is written.
-  - Guardian registration enforces verification against the student's registered phone or HMAC linking code before linking student accounts.
-  - Paid course enrollments remain `pending` until verified via HMAC-SHA256 webhook (`/payments/webhook/{gateway}`) or authorized admin/branch approval.
-  - Update packages validate ZIP entries against path traversal, skip protected config/user-data paths, verify SHA-256 backup checksums, and roll back automatically on failure.
-- **Interactive Preview Workspace (`server.ts`, `src/`)**:
-  - Enforces a single Main Admin at the database index level (`idx_single_main_admin`), optional TOTP 2FA with recovery codes, and session revocation.
-  - Requires a 32+ character `SESSION_SECRET` in production and verifies PostgreSQL TLS certificates (`PGSSL=verify-full` + `PGSSLROOTCERT`).
-  - Redacts user identifiers, exam answers, grading internals, and unpaid media URLs on all public endpoints with rate limiting.
-
-## Reporting a Vulnerability
-Please report security issues privately to the platform administrator email configured in your deployment settings rather than opening a public issue.
+## Baseline Hardening Included
+- Installation routes (`/install*`) are permanently locked by `storage/installed.lock` after setup.
+- Production secrets reside strictly in `.env` (never exposed in client HTML or protected from overwrite during updates).
+- Role-based access control (`RoleMiddleware` and `BatchPolicy`) protects all `/portal*` administrative, branch, instructor, and student endpoints.
+- Student passwords are hashed with Laravel's `bcrypt`/`argon2` hashing, CSRF tokens protect every state-changing POST/PUT/DELETE route, and file uploads validate image extensions and safe public upload paths.
+- Update packages sanitize ZIP entry paths to block path traversal (`..`), enforce a size ceiling, skip protected user-data directories, verify SHA-256 checksums on backups, and automatically roll back on failure.

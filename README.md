@@ -1,55 +1,53 @@
-# Aloms English Center — White-Label LMS & Academy Platform
+# Edupro LMS — Laravel 13
 
-**Primary Production Backend:** **Laravel 13** (`laravel-system/`, PHP 8.3+, SQLite / MySQL / PostgreSQL). All production authentication, authorization, business records, payments, and migrations are owned by Laravel.  
-**Preview & Installer Workspace:** **React 19 + TypeScript + Vite + Express** (development/preview only; not a production system of record).
+**Laravel 13 is the sole application and production runtime.** This repository root is the Laravel project root. There is no Node.js/Express production server, Node database, React build or separate API service.
 
----
+## Application modules
 
-## Architecture Overview
+- Public website, course catalogue, instructor directory, community and certificate verification
+- Separate login, registration and recovery flows for Branch, Teacher, Student and Guardian
+- Admin approval and account/role management
+- Course, category, batch, lesson, attendance, enrollment and learning progress
+- Exams, question bank, results and certificates
+- Products, e-books, orders, coupons and payment webhook verification
+- Branch operations, finance, payroll and reports
+- White-label branding and homepage/menu settings
+- Verified backups, restore and non-destructive system updater
 
-| Layer | Role | Location |
-| --- | --- | --- |
-| **Primary Production Application** | Production web application with `/install` setup wizard, zero-demo-data bootstrap, multi-role `/portal`, signed payment webhooks (`/payments/webhook/{gateway}`), non-destructive `.zip` updater, and SHA-256 full backups | `laravel-system/` |
-| **Preview & Installer Workspace** | UI preview, development-only legacy API sandbox, and installer download delivery. Do not point production clients or payment webhooks at this service. | `src/`, `server.ts`, `db/` |
+## Requirements
 
-> **Direct Installer Download:** On the live preview homepage (`/`), use the **Download Installable Laravel 13 Package (.zip)** button or request `GET /downloads/academy-lms-laravel13.zip`.
+- PHP 8.3+
+- Composer 2
+- SQLite 3, MySQL 8+/MariaDB 10.6+, or PostgreSQL 14+
+- PHP extensions: mbstring, openssl, PDO driver, tokenizer, XML, ctype, JSON, bcmath, curl, zip and GD
 
----
+## Install
 
-## Quick Start — Production Deployment (Laravel 13)
+1. Upload this project and point the web server document root to `public/`.
+2. Run `composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader`.
+3. Copy `.env.example` to `.env`, configure database/mail/payment secrets and set `APP_ENV=production`, `APP_DEBUG=false`, `SESSION_SECURE_COOKIE=true`.
+4. Run `php artisan key:generate`.
+5. Ensure `storage/` and `bootstrap/cache/` are writable by PHP.
+6. Run `php artisan migrate --force` or use the first-install wizard at `/install`.
+7. Visit `/up`, complete the first-install wizard, then create/approve accounts through the admin portal.
 
-1. Download `/downloads/academy-lms-laravel13.zip` (or deploy `laravel-system/`).
-2. Point your web server document root to `public/`.
-3. Install PHP dependencies:
-   ```bash
-   composer install --no-dev --optimize-autoloader
-   ```
-4. Ensure `storage/` and `bootstrap/cache/` are writable and visit `https://your-domain.com/install`.
-5. Complete the installation wizard:
-   - Generates a cryptographic `APP_KEY` and writes `.env` with `SESSION_ENCRYPT=true`, `SESSION_HTTP_ONLY=true`, and HTTPS-aware `SESSION_SECURE_COOKIE`.
-   - Configures SQLite, MySQL (with `MYSQL_ATTR_SSL_CA` verification), or PostgreSQL (`DB_SSLMODE` + `DB_SSLROOTCERT`).
-   - Runs incremental migrations with zero demo data and locks `/install` via `storage/installed.lock`.
+See [README_INSTALL.md](README_INSTALL.md), [DEPLOYMENT.md](DEPLOYMENT.md) and [SECURITY.md](SECURITY.md).
 
-See `laravel-system/README_INSTALL.md` and `DEPLOYMENT.md` for complete deployment and non-destructive upgrade instructions.
+## Development and checks
 
----
+```bash
+composer install
+cp .env.example .env
+php artisan key:generate
+touch database/database.sqlite
+php artisan migrate
+php artisan test --stop-on-failure
+php artisan route:list
+php artisan serve
+```
 
-## Quick Start — Preview Workspace (Node.js)
+GitHub Actions validates PHP syntax, installs Composer dependencies, runs migrations and all Laravel feature tests, boots the app and smoke-tests public and role-specific routes. It also produces a Laravel-only ZIP installer artifact.
 
-This workspace is for local UI preview, development utilities, and installer delivery only. Production requests, identity, data mutations, payment settlement, and migrations must be served by Laravel. Do not deploy the Express API as the production backend.
+## Data migration note
 
-1. Install dependencies:
-   ```bash
-   bun install
-   ```
-2. Configure environment variables from `.env.example` (set a 32+ character `SESSION_SECRET` before running with `NODE_ENV=production`, and set `DATABASE_URL` / `PGSSL=verify-full` + `PGSSLROOTCERT` when using managed PostgreSQL).
-3. Run development server:
-   ```bash
-   bun run dev
-   ```
-4. Verify lint, build, and test suite:
-   ```bash
-   bun run lint
-   bun run build
-   bunx tsx --test src/lib/*.test.ts src/server/*.test.ts
-   ```
+The previous Node/SQLite application is not used at runtime. If an existing installation contains customer/student records in its old database, export and reconcile those records into the Laravel schema using a reviewed migration/import procedure before switching production traffic. Do not overwrite a live database or assume schemas are interchangeable.
