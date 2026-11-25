@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { AiChatbotWidget } from './components/AiChatbotWidget';
 import { CartDrawer } from './components/CartDrawer';
 import { Footer } from './components/Footer';
@@ -16,6 +16,7 @@ import { LearnPage } from './pages/LearnPage';
 import { LoginPage } from './pages/LoginPage';
 import { PortalPage } from './pages/PortalPage';
 import { ProductsPage } from './pages/ProductsPage';
+import { ProfilePage } from './pages/ProfilePage';
 import { ResultPage } from './pages/ResultPage';
 import { AboutPage, ContactPage, PolicyPage } from './pages/StaticPages';
 import { VerifyCertificatePage } from './pages/VerifyCertificatePage';
@@ -23,159 +24,143 @@ import { VerifyCertificatePage } from './pages/VerifyCertificatePage';
 function CustomCmsPage({ slug }: { slug: string }) {
   const { bootstrap } = useAuth();
   const page = (bootstrap?.settings.customPages ?? []).find(
-    (p) => p.slug === slug && p.published
+    (p) => p.published && p.slug.toLowerCase() === slug.toLowerCase()
   );
-
   if (!page) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-20 text-center">
+      <div className="mx-auto max-w-3xl px-4 py-16 text-center">
         <h1 className="text-2xl font-extrabold text-slate-900">Page Not Found</h1>
         <p className="mt-2 text-sm text-slate-600">
-          This custom page has not been published yet in Page Builder.
+          The requested page could not be found or is currently unpublished.
         </p>
       </div>
     );
   }
-
   return (
     <div className="mx-auto max-w-4xl px-4 py-14 sm:px-6">
-      {page.coverImage && (
-        <img
-          src={page.coverImage}
-          alt={page.title}
-          className="mb-8 h-64 w-full rounded-3xl object-cover shadow-md"
-          referrerPolicy="no-referrer"
-        />
-      )}
-      <h1 className="text-3xl font-extrabold text-[#062436]">{page.title}</h1>
-      <p className="mt-2 text-base font-medium text-sky-700">{page.subtitle}</p>
-      <div className="mt-6 whitespace-pre-wrap rounded-2xl border border-slate-200 bg-white p-6 text-sm leading-relaxed text-slate-700 shadow-xs">
+      <h1 className="text-3xl font-extrabold text-slate-900">{page.title}</h1>
+      {page.subtitle ? (
+        <p className="mt-2 text-base text-slate-600">{page.subtitle}</p>
+      ) : null}
+      <div className="mt-6 space-y-4 whitespace-pre-wrap rounded-2xl border border-slate-200 bg-white p-6 text-sm leading-relaxed text-slate-700 shadow-xs">
         {page.body}
       </div>
     </div>
   );
 }
 
-function RouterShell() {
-  const { bootstrap } = useAuth();
-  const [fullPath, setFullPath] = useState(
-    () => window.location.pathname + window.location.search
+function AppRouter() {
+  const [locationPath, setLocationPath] = useState(() =>
+    typeof window !== 'undefined'
+      ? `${window.location.pathname}${window.location.search}`
+      : '/'
   );
 
   useEffect(() => {
-    const onPop = () => setFullPath(window.location.pathname + window.location.search);
+    const onPop = () => {
+      setLocationPath(`${window.location.pathname}${window.location.search}`);
+    };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
-  useEffect(() => {
-    const fav = bootstrap?.settings.faviconUrl;
-    if (fav) {
-      let link = document.querySelector<HTMLLinkElement>("link[rel='icon']");
-      if (!link) {
-        link = document.createElement('link');
-        link.rel = 'icon';
-        document.head.appendChild(link);
-      }
-      link.href = fav;
+  const navigate = useCallback((to: string) => {
+    if (!to) return;
+    if (/^https?:\/\//i.test(to)) {
+      window.open(to, '_blank', 'noopener,noreferrer');
+      return;
     }
-    if (bootstrap?.settings.brandName) {
-      document.title = `${bootstrap.settings.brandName} — ${bootstrap.settings.tagline || 'Online & Multi-Branch English Platform'}`;
-    }
-  }, [bootstrap?.settings.faviconUrl, bootstrap?.settings.brandName, bootstrap?.settings.tagline]);
+    const normalized = to.startsWith('/') ? to : `/${to}`;
+    window.history.pushState({}, '', normalized);
+    setLocationPath(normalized);
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  }, []);
 
-  const navigate = (nextPath: string) => {
-    if (nextPath === fullPath) return;
-    window.history.pushState({}, '', nextPath);
-    setFullPath(nextPath);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+  const [pathname, search = ''] = locationPath.split('?');
+  const params = new URLSearchParams(search);
+  const cleanPath = pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
+  const isPortal = cleanPath === '/portal' || cleanPath.startsWith('/portal/');
+
+  const renderPage = () => {
+    if (cleanPath === '/' || cleanPath === '') {
+      return <HomePage navigate={navigate} />;
+    }
+    if (cleanPath === '/courses') {
+      return (
+        <CoursesPage
+          navigate={navigate}
+          initialCategory={params.get('cat') || 'All Courses'}
+        />
+      );
+    }
+    if (cleanPath.startsWith('/course/')) {
+      const slug = decodeURIComponent(cleanPath.slice('/course/'.length));
+      return <CourseDetailPage slug={slug} navigate={navigate} />;
+    }
+    if (cleanPath === '/learn') {
+      return <LearnPage navigate={navigate} />;
+    }
+    if (cleanPath === '/instructors') {
+      return <InstructorsPage />;
+    }
+    if (cleanPath === '/exams') {
+      return <ExamsPage navigate={navigate} />;
+    }
+    if (cleanPath === '/products') {
+      return <ProductsPage />;
+    }
+    if (cleanPath === '/ebooks') {
+      return <EbooksPage navigate={navigate} />;
+    }
+    if (cleanPath === '/community') {
+      return <CommunityPage />;
+    }
+    if (cleanPath === '/board-result') {
+      return <ResultPage />;
+    }
+    if (cleanPath === '/verify-certificate') {
+      return <VerifyCertificatePage initialCertNo={params.get('cert') || ''} navigate={navigate} />;
+    }
+    if (cleanPath.startsWith('/verify-certificate/')) {
+      const certNo = decodeURIComponent(cleanPath.slice('/verify-certificate/'.length));
+      return <VerifyCertificatePage initialCertNo={certNo} navigate={navigate} />;
+    }
+    if (cleanPath === '/about-us' || cleanPath === '/about') {
+      return <AboutPage />;
+    }
+    if (cleanPath === '/contact-us' || cleanPath === '/contact') {
+      return <ContactPage />;
+    }
+    if (cleanPath === '/terms-and-conditions') {
+      return <PolicyPage title="Terms & Conditions" />;
+    }
+    if (cleanPath === '/privacy-policy') {
+      return <PolicyPage title="Privacy Policy" />;
+    }
+    if (cleanPath === '/refund-policy') {
+      return <PolicyPage title="Refund Policy" />;
+    }
+    if (cleanPath.startsWith('/page/')) {
+      const slug = decodeURIComponent(cleanPath.slice('/page/'.length));
+      return <CustomCmsPage slug={slug} />;
+    }
+    if (cleanPath === '/profile') {
+      return <ProfilePage navigate={navigate} />;
+    }
+    if (cleanPath === '/login') {
+      return <LoginPage navigate={navigate} />;
+    }
+    if (isPortal) {
+      return <PortalPage navigate={navigate} />;
+    }
+    return <HomePage navigate={navigate} />;
   };
 
-  const url = new URL(fullPath, window.location.origin);
-  const pathname = url.pathname;
-  const catParam = url.searchParams.get('cat') || 'All Courses';
-
-  let pageNode = <HomePage navigate={navigate} />;
-  if (pathname === '/courses') {
-    pageNode = <CoursesPage navigate={navigate} initialCategory={catParam} />;
-  } else if (pathname.startsWith('/course/') || pathname.startsWith('/courses/')) {
-    const slug = pathname.startsWith('/courses/')
-      ? pathname.replace('/courses/', '')
-      : pathname.replace('/course/', '');
-    pageNode = <CourseDetailPage slug={slug} navigate={navigate} />;
-  } else if (pathname === '/verify-certificate') {
-    pageNode = (
-      <VerifyCertificatePage
-        initialCertNo={url.searchParams.get('cert') || ''}
-        navigate={navigate}
-      />
-    );
-  } else if (pathname === '/learn') {
-    pageNode = <LearnPage navigate={navigate} />;
-  } else if (pathname === '/instructors') {
-    pageNode = <InstructorsPage />;
-  } else if (pathname === '/exams') {
-    pageNode = <ExamsPage navigate={navigate} />;
-  } else if (pathname === '/products') {
-    pageNode = <ProductsPage />;
-  } else if (pathname === '/ebooks') {
-    pageNode = <EbooksPage navigate={navigate} />;
-  } else if (pathname === '/community') {
-    pageNode = <CommunityPage />;
-  } else if (pathname.startsWith('/page/')) {
-    const slug = pathname.replace('/page/', '');
-    pageNode = <CustomCmsPage slug={slug} />;
-  } else if (pathname === '/board-result') {
-    pageNode = <ResultPage />;
-  } else if (pathname === '/login' || pathname === '/profile') {
-    pageNode = <LoginPage navigate={navigate} />;
-  } else if (pathname === '/portal' || pathname === '/dashboard') {
-    pageNode = <PortalPage navigate={navigate} />;
-  } else if (pathname === '/about-us') {
-    pageNode = <AboutPage />;
-  } else if (pathname === '/contact-us') {
-    pageNode = <ContactPage />;
-  } else if (pathname === '/terms-and-conditions') {
-    pageNode = <PolicyPage title="Terms & Conditions" />;
-  } else if (pathname === '/privacy-policy') {
-    pageNode = <PolicyPage title="Privacy Policy" />;
-  } else if (pathname === '/refund-policy') {
-    pageNode = <PolicyPage title="Refund Policy" />;
-  }
-
-  const isPortalShell = pathname === '/portal' || pathname === '/dashboard';
-
-  useEffect(() => {
-    const isPrivate =
-      pathname.startsWith('/portal') ||
-      pathname.startsWith('/dashboard') ||
-      pathname.startsWith('/learn') ||
-      pathname.startsWith('/login');
-    let robots = document.querySelector<HTMLMetaElement>("meta[name='robots']");
-    if (!robots) {
-      robots = document.createElement('meta');
-      robots.name = 'robots';
-      document.head.appendChild(robots);
-    }
-    if (!pathname.startsWith('/course/') && !pathname.startsWith('/courses/')) {
-      robots.content = isPrivate ? 'noindex,nofollow' : 'index,follow';
-    }
-  }, [pathname]);
-
-  if (isPortalShell) {
-    return (
-      <div className="min-h-screen">
-        <main className="min-h-screen">{pageNode}</main>
-        <CartDrawer navigate={navigate} />
-      </div>
-    );
-  }
-
   return (
-    <div className="flex min-h-screen flex-col">
-      <Navbar currentPath={pathname} navigate={navigate} />
-      <main className="flex-1">{pageNode}</main>
-      <Footer navigate={navigate} />
+    <div className="flex min-h-screen flex-col bg-slate-50 text-slate-900">
+      {!isPortal && <Navbar currentPath={cleanPath} navigate={navigate} />}
+      <main className="flex-1">{renderPage()}</main>
+      {!isPortal && <Footer navigate={navigate} />}
       <CartDrawer navigate={navigate} />
       <AiChatbotWidget />
     </div>
@@ -186,7 +171,7 @@ export default function App() {
   return (
     <AuthProvider>
       <CartProvider>
-        <RouterShell />
+        <AppRouter />
       </CartProvider>
     </AuthProvider>
   );

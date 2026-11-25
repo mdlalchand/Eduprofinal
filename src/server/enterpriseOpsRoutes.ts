@@ -8,9 +8,10 @@ import {
   saveEncryptedIntegrationSecrets,
 } from '../db/persistence';
 import { postgresHealthCheck } from '../db/postgresAdapter';
-import { canTeacherManageCourse } from '../lib/courseEnterprise';
+import { canTeacherManageCourse, getTeacherAssignedCourseIds } from '../lib/courseEnterprise';
 import { maskSecretValue } from '../lib/domain';
 import { recalculateExamAttemptGrade } from '../lib/usersAndTeaching';
+import { isStudentApprovedInCourse, normalizePhoneDigits } from './publicRedaction';
 import type {
   AcademicClassSection,
   AcademicSubject,
@@ -507,6 +508,14 @@ export function createEnterpriseOpsRouter(
       res.status(404).json({ error: 'Lesson not found.' });
       return;
     }
+    if (
+      user.role === 'student' &&
+      !lesson.isFreePreview &&
+      !isStudentApprovedInCourse(db.enrollments, user.id, lesson.courseId)
+    ) {
+      res.status(403).json({ error: 'Approved enrollment is required to access or track this lesson.' });
+      return;
+    }
     const watchedSeconds = Math.max(0, Math.round(Number(req.body?.watchedSeconds) || 0));
     const durationSeconds = Math.max(1, Math.round(Number(req.body?.durationSeconds) || 600));
     const percentWatched = Math.min(100, Math.round((watchedSeconds / durationSeconds) * 100));
@@ -551,12 +560,22 @@ export function createEnterpriseOpsRouter(
 
   router.post('/api/portal/exams/:id/start', requireAuth, (req: AuthedRequest, res) => {
     const db = getDb();
+    const actor = req.authUser!;
     const exam = db.exams.find((e) => e.id === req.params.id);
     if (!exam) {
       res.status(404).json({ error: 'Exam not found.' });
       return;
     }
-    const userId = req.authUser!.id;
+    if (
+      actor.role === 'student' &&
+      exam.visibility === 'course' &&
+      exam.courseId &&
+      !isStudentApprovedInCourse(db.enrollments, actor.id, exam.courseId)
+    ) {
+      res.status(403).json({ error: 'Approved course enrollment is required to start this exam.' });
+      return;
+    }
+    const userId = actor.id;
     let timer = db.examSessionTimers.find((t) => t.examId === exam.id && t.userId === userId && !t.submittedAt);
     if (!timer) {
       const startedAt = Date.now();
@@ -699,15 +718,25 @@ export function createEnterpriseOpsRouter(
 
       let records = db.attendance;
       if (actor.role === 'teacher') {
-        const teacherBatches = new Set(
+        const assignedCourses = getTeacherAssignedCourseIds(
+          actor,
+          db.courses,
+          db.instructors,
           db.batches
-            .filter((b) => db.instructors.some((i) => i.id === b.instructorId && i.userId === actor.id))
-            .map((b) => b.id)
+        );
+        const teacherBatches = new Set(
+          db.batches.filter((b) => assignedCourses.has(b.courseId)).map((b) => b.id)
+        );
+        const enrolledStudents = new Set(
+          db.enrollments
+            .filter((e) => e.status === 'approved' && assignedCourses.has(e.courseId))
+            .map((e) => e.userId)
         );
         records = records.filter(
           (r) =>
             (r.targetType === 'teacher' && r.targetId === actor.id) ||
-            (r.targetType === 'student' && (!r.batchId || teacherBatches.has(r.batchId)))
+            (r.targetType === 'student' &&
+              ((r.batchId && teacherBatches.has(r.batchId)) || enrolledStudents.has(r.targetId)))
         );
       }
       if (month) records = records.filter((r) => r.date.startsWith(month));
@@ -728,6 +757,12 @@ export function createEnterpriseOpsRouter(
         return;
       }
 
+      const visibleRecordIds = new Set(records.map((r) => r.id));
+      const corrections =
+        actor.role === 'teacher'
+          ? db.attendanceCorrections.filter((c) => visibleRecordIds.has(c.attendanceId))
+          : db.attendanceCorrections;
+
       res.json({
         total: records.length,
         presentCount: records.filter((r) => r.status === 'present').length,
@@ -735,7 +770,7 @@ export function createEnterpriseOpsRouter(
         absentCount: records.filter((r) => r.status === 'absent').length,
         excusedCount: records.filter((r) => r.status === 'excused' || r.status === 'leave').length,
         records,
-        corrections: db.attendanceCorrections,
+        corrections,
       });
     }
   );
@@ -1002,6 +1037,36 @@ export function createEnterpriseOpsRouter(
     if (channel === 'sms' && !isValidBangladeshPhone(recipient)) {
       res.status(400).json({ error: 'Invalid Bangladesh mobile phone format (expected 01XXXXXXXXX).' });
       return;
+    }
+    const actor = req.authUser!;
+    if (actor.role === 'teacher') {
+      const db = getDb();
+      const assignedCourses = getTeacherAssignedCourseIds(
+        actor,
+        db.courses,
+        db.instructors,
+        db.batches
+      );
+      const enrolledStudentIds = new Set(
+        db.enrollments
+          .filter((e) => e.status === 'approved' && assignedCourses.has(e.courseId))
+          .map((e) => e.userId)
+      );
+      const cleanRecipientLower = recipient.toLowerCase();
+      const cleanRecipientDigits = normalizePhoneDigits(recipient);
+      const targetUser = db.users.find(
+        (u) =>
+          (recipientUserId && u.id === recipientUserId) ||
+          u.email.toLowerCase() === cleanRecipientLower ||
+          (cleanRecipientDigits.length >= 10 &&
+            normalizePhoneDigits(u.phone) === cleanRecipientDigits)
+      );
+      if (!targetUser || !enrolledStudentIds.has(targetUser.id)) {
+        res.status(403).json({
+          error: 'Teachers can only message students enrolled in their assigned courses or batches.',
+        });
+        return;
+      }
     }
     const log = await dispatchRealCommunication({
       channel,

@@ -1,9 +1,12 @@
 import {
+  ArrowDown,
+  ArrowUp,
   Award,
   BookOpen,
   CalendarClock,
   CheckCircle2,
   ClipboardList,
+  Copy,
   ExternalLink,
   FileText,
   Flame,
@@ -11,14 +14,20 @@ import {
   Layers,
   Lock,
   Megaphone,
+  Pencil,
   Play,
+  Plus,
   Radio,
   Settings,
   ShieldCheck,
+  Trash2,
   Video,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AdminLessonModal } from '../components/AdminLessonModal';
 import { CertificateModal } from '../components/courses/CertificateModal';
+import { CourseWizardModal } from '../components/courses/CourseWizardModal';
+import { CurriculumBuilderModal } from '../components/courses/CurriculumBuilderModal';
 import { ImageUploadField } from '../components/ImageUploadField';
 import { ScormPlayerModal } from '../components/ScormPlayerModal';
 import { useAuth } from '../context/AuthContext';
@@ -70,7 +79,8 @@ interface LearnData {
 }
 
 export function LearnPage({ navigate }: LearnPageProps) {
-  const { user, apiFetch } = useAuth();
+  const { user, bootstrap, apiFetch, refreshBootstrap } = useAuth();
+  const canManageLessons = user?.role === 'admin' || user?.role === 'teacher';
   const [data, setData] = useState<LearnData | null>(null);
   const [exams, setExams] = useState<Exam[]>([]);
   const [examAttempts, setExamAttempts] = useState<ExamAttempt[]>([]);
@@ -81,6 +91,15 @@ export function LearnPage({ navigate }: LearnPageProps) {
   const [activeScormPkg, setActiveScormPkg] = useState<ScormPackage | null>(null);
   const [rewards, setRewards] = useState<LearnerRewardProfile | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Admin / Teacher Inline Classroom Studio states
+  const [lessonModalOpen, setLessonModalOpen] = useState(false);
+  const [editingLesson, setEditingLesson] = useState<CourseLesson | null>(null);
+  const [curriculumOpen, setCurriculumOpen] = useState(false);
+  const [courseWizardOpen, setCourseWizardOpen] = useState(false);
+  const [confirmDeleteLessonId, setConfirmDeleteLessonId] = useState<string | null>(null);
+  const [adminToast, setAdminToast] = useState<string | null>(null);
+  const [adminActionBusyId, setAdminActionBusyId] = useState<string | null>(null);
 
   // Assignments & Certificate states
   const [draftAnswers, setDraftAnswers] = useState<Record<string, string>>({});
@@ -200,22 +219,22 @@ export function LearnPage({ navigate }: LearnPageProps) {
 
   if (!user) {
     return (
-      <div className="mx-auto max-w-2xl px-4 py-20 text-center">
-        <div className="rounded-2xl border border-slate-200 bg-white p-10 shadow-sm">
-          <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
+      <div className="rm-pastel-bg min-h-screen px-4 py-20 text-center">
+        <div className="mx-auto max-w-xl rounded-2xl border border-slate-200/80 bg-white p-10 shadow-sm">
+          <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-sky-50 text-[#0284c7]">
             <Lock className="h-7 w-7" />
           </span>
-          <h1 className="mt-4 text-2xl font-extrabold text-slate-900">Not Authorized</h1>
+          <h1 className="mt-4 text-2xl font-extrabold text-[#0284c7]">Classroom Access Required</h1>
           <p className="mt-2 text-sm text-slate-600">
-            You need to be logged in to access live classes, recorded HD videos, lecture sheets, and
-            progress tracking.
+            Sign in to join live classes, watch HD lectures, download lecture sheets, and track
+            your course progress.
           </p>
           <button
             type="button"
             onClick={() => navigate('/login')}
-            className="mt-6 rounded-xl bg-[#062436] px-6 py-3 text-sm font-bold text-white hover:bg-[#0c3954]"
+            className="mt-6 rounded-xl bg-[#0284c7] px-6 py-3 text-sm font-bold text-white shadow-sm hover:bg-[#0369a1]"
           >
-            Go to Login Page
+            Sign In to Classroom
           </button>
         </div>
       </div>
@@ -224,7 +243,7 @@ export function LearnPage({ navigate }: LearnPageProps) {
 
   if (loading || !data) {
     return (
-      <div className="mx-auto max-w-7xl px-4 py-16 text-center text-slate-500">
+      <div className="rm-pastel-bg min-h-screen px-4 py-16 text-center text-sm font-semibold text-slate-500">
         Loading your classroom...
       </div>
     );
@@ -368,6 +387,83 @@ export function LearnPage({ navigate }: LearnPageProps) {
 
   const activeType = activeLesson?.lessonType ?? 'recorded';
 
+  const handleReorderLesson = async (lessonId: string, direction: 'up' | 'down') => {
+    setAdminActionBusyId(lessonId);
+    try {
+      await apiFetch(`/api/portal/lessons/${encodeURIComponent(lessonId)}/reorder`, {
+        method: 'POST',
+        body: JSON.stringify({ direction }),
+      });
+      await loadLearnWorkspace();
+      await refreshBootstrap();
+      setAdminToast(`Lesson moved ${direction}.`);
+    } catch (err) {
+      setAdminToast(err instanceof Error ? err.message : 'Could not reorder lesson.');
+    } finally {
+      setAdminActionBusyId(null);
+    }
+  };
+
+  const handleDuplicateLesson = async (les: CourseLesson) => {
+    setAdminActionBusyId(les.id);
+    try {
+      await apiFetch(`/api/portal/lessons/${encodeURIComponent(les.id)}/duplicate`, {
+        method: 'POST',
+      });
+      await loadLearnWorkspace();
+      await refreshBootstrap();
+      setAdminToast(`Duplicated "${les.title}".`);
+    } catch (err) {
+      setAdminToast(err instanceof Error ? err.message : 'Could not duplicate lesson.');
+    } finally {
+      setAdminActionBusyId(null);
+    }
+  };
+
+  const handleCycleLiveStatus = async (les: CourseLesson) => {
+    const nextStatus =
+      les.liveStatus === 'scheduled'
+        ? 'live_now'
+        : les.liveStatus === 'live_now'
+          ? 'ended'
+          : 'scheduled';
+    setAdminActionBusyId(les.id);
+    try {
+      await apiFetch(`/api/portal/lessons/${encodeURIComponent(les.id)}/live-status`, {
+        method: 'POST',
+        body: JSON.stringify({ liveStatus: nextStatus }),
+      });
+      await loadLearnWorkspace();
+      setAdminToast(`Live status updated to ${nextStatus.replace('_', ' ').toUpperCase()}.`);
+    } catch (err) {
+      setAdminToast(err instanceof Error ? err.message : 'Could not update live status.');
+    } finally {
+      setAdminActionBusyId(null);
+    }
+  };
+
+  const handleDeleteLesson = async (les: CourseLesson) => {
+    if (confirmDeleteLessonId !== les.id) {
+      setConfirmDeleteLessonId(les.id);
+      return;
+    }
+    setAdminActionBusyId(les.id);
+    try {
+      await apiFetch(`/api/portal/lessons/${encodeURIComponent(les.id)}`, {
+        method: 'DELETE',
+      });
+      setConfirmDeleteLessonId(null);
+      if (selectedLessonId === les.id) setSelectedLessonId('');
+      await loadLearnWorkspace();
+      await refreshBootstrap();
+      setAdminToast(`Deleted "${les.title}".`);
+    } catch (err) {
+      setAdminToast(err instanceof Error ? err.message : 'Could not delete lesson.');
+    } finally {
+      setAdminActionBusyId(null);
+    }
+  };
+
   const renderLessonRow = (les: CourseLesson) => {
     const isSelected = activeLesson?.id === les.id;
     const done = completedIds.includes(les.id);
@@ -377,98 +473,203 @@ export function LearnPage({ navigate }: LearnPageProps) {
         : { unlocked: true };
     const lType = les.lessonType ?? 'recorded';
     return (
-      <button
+      <div
         key={les.id}
-        type="button"
-        onClick={() => handleSelectLesson(les)}
-        className={`flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-colors ${
+        className={`rounded-xl border p-3 transition-colors ${
           !lockCheck.unlocked
             ? 'border-slate-200 bg-slate-50 opacity-70'
             : isSelected
-              ? 'border-sky-500 bg-sky-50'
-              : 'border-slate-200 hover:bg-slate-50'
+              ? 'border-sky-500 bg-sky-50/90'
+              : 'border-slate-200 bg-white hover:bg-slate-50'
         }`}
       >
-        <span
-          className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
-            !lockCheck.unlocked
-              ? 'bg-slate-200 text-slate-600'
-              : done
-                ? 'bg-emerald-500 text-white'
-                : lType === 'live'
-                  ? 'bg-rose-600 text-white'
-                  : lType === 'lecture_sheet' || lType === 'pdf_notes' || lType === 'document'
-                    ? 'bg-amber-500 text-white'
-                    : lType === 'audio'
-                      ? 'bg-purple-600 text-white'
-                      : isSelected
-                        ? 'bg-sky-600 text-white'
-                        : 'bg-slate-100 text-slate-600'
-          }`}
+        <button
+          type="button"
+          onClick={() => handleSelectLesson(les)}
+          className="flex w-full items-start gap-3 text-left"
         >
-          {!lockCheck.unlocked ? (
-            <Lock className="h-3.5 w-3.5" />
-          ) : done ? (
-            <CheckCircle2 className="h-4 w-4" />
-          ) : lType === 'live' ? (
-            <Radio className="h-4 w-4" />
-          ) : lType === 'lecture_sheet' || lType === 'pdf_notes' || lType === 'document' ? (
-            <FileText className="h-4 w-4" />
-          ) : lType === 'audio' ? (
-            <Headphones className="h-4 w-4" />
-          ) : (
-            <Video className="h-4 w-4" />
-          )}
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[10px] font-extrabold uppercase text-slate-500">
-              {lType === 'live'
-                ? les.liveStatus === 'live_now'
-                  ? 'LIVE NOW'
-                  : 'Live Class'
-                : lType.replace('_', ' ')}
-            </span>
-            {les.batchName && (
-              <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700">
-                {les.batchName}
-              </span>
+          <span
+            className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+              !lockCheck.unlocked
+                ? 'bg-slate-200 text-slate-600'
+                : done
+                  ? 'bg-emerald-500 text-white'
+                  : lType === 'live'
+                    ? 'bg-rose-600 text-white'
+                    : lType === 'lecture_sheet' || lType === 'pdf_notes' || lType === 'document'
+                      ? 'bg-amber-500 text-white'
+                      : lType === 'audio'
+                        ? 'bg-purple-600 text-white'
+                        : isSelected
+                          ? 'bg-[#0284c7] text-white'
+                          : 'bg-slate-100 text-slate-600'
+            }`}
+          >
+            {!lockCheck.unlocked ? (
+              <Lock className="h-3.5 w-3.5" />
+            ) : done ? (
+              <CheckCircle2 className="h-4 w-4" />
+            ) : lType === 'live' ? (
+              <Radio className="h-4 w-4" />
+            ) : lType === 'lecture_sheet' || lType === 'pdf_notes' || lType === 'document' ? (
+              <FileText className="h-4 w-4" />
+            ) : lType === 'audio' ? (
+              <Headphones className="h-4 w-4" />
+            ) : (
+              <Video className="h-4 w-4" />
             )}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] font-extrabold uppercase text-slate-500">
+                {lType === 'live'
+                  ? les.liveStatus === 'live_now'
+                    ? 'LIVE NOW'
+                    : 'Live Class'
+                  : lType.replace('_', ' ')}
+              </span>
+              {les.batchName && (
+                <span className="rounded bg-sky-50 px-1.5 py-0.5 text-[10px] font-bold text-[#0284c7]">
+                  {les.batchName}
+                </span>
+              )}
+            </div>
+            <p className="mt-0.5 text-xs font-bold text-slate-900">{les.title}</p>
+            <p className="mt-0.5 font-mono-tabular text-[11px] text-slate-500">
+              {les.duration}
+              {lessonProgressMap[les.id]
+                ? ` · ${lessonProgressMap[les.id].percentWatched}% watched`
+                : ''}
+            </p>
           </div>
-          <p className="mt-0.5 text-xs font-bold text-slate-900">{les.title}</p>
-          <p className="mt-0.5 font-mono-tabular text-[11px] text-slate-500">
-            {les.duration}
-            {lessonProgressMap[les.id]
-              ? ` · ${lessonProgressMap[les.id].percentWatched}% watched`
-              : ''}
-          </p>
-        </div>
-      </button>
+        </button>
+
+        {canManageLessons && (
+          <div className="mt-2.5 flex flex-wrap items-center gap-1 border-t border-slate-100 pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setEditingLesson(les);
+                setLessonModalOpen(true);
+              }}
+              aria-label={`Edit lesson ${les.title}`}
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-slate-700 hover:bg-slate-50"
+            >
+              <Pencil className="h-3 w-3" />
+              <span>Edit</span>
+            </button>
+            <button
+              type="button"
+              disabled={adminActionBusyId === les.id}
+              onClick={() => void handleReorderLesson(les.id, 'up')}
+              aria-label={`Move ${les.title} up`}
+              className="rounded-lg border border-slate-200 bg-white p-1 text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+            >
+              <ArrowUp className="h-3 w-3" />
+            </button>
+            <button
+              type="button"
+              disabled={adminActionBusyId === les.id}
+              onClick={() => void handleReorderLesson(les.id, 'down')}
+              aria-label={`Move ${les.title} down`}
+              className="rounded-lg border border-slate-200 bg-white p-1 text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+            >
+              <ArrowDown className="h-3 w-3" />
+            </button>
+            <button
+              type="button"
+              disabled={adminActionBusyId === les.id}
+              onClick={() => void handleDuplicateLesson(les)}
+              aria-label={`Duplicate lesson ${les.title}`}
+              className="rounded-lg border border-slate-200 bg-white p-1 text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+            >
+              <Copy className="h-3 w-3" />
+            </button>
+            {lType === 'live' && (
+              <button
+                type="button"
+                disabled={adminActionBusyId === les.id}
+                onClick={() => void handleCycleLiveStatus(les)}
+                className="rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-bold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+              >
+                Status: {(les.liveStatus || 'scheduled').replace('_', ' ')}
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={adminActionBusyId === les.id}
+              onClick={() => void handleDeleteLesson(les)}
+              aria-label={`Delete lesson ${les.title}`}
+              className={`ml-auto inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-bold transition-colors ${
+                confirmDeleteLessonId === les.id
+                  ? 'bg-rose-600 text-white'
+                  : 'border border-rose-200 bg-white text-rose-600 hover:bg-rose-50'
+              }`}
+            >
+              <Trash2 className="h-3 w-3" />
+              <span>{confirmDeleteLessonId === les.id ? 'Confirm' : 'Delete'}</span>
+            </button>
+          </div>
+        )}
+      </div>
     );
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-16 pt-8">
+    <div className="rm-pastel-bg min-h-screen pb-16 pt-10">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="text-2xl font-extrabold text-slate-900">
-              AEC Live &amp; Recorded Classroom
+            <h1 className="text-2xl font-extrabold tracking-tight text-[#0284c7] sm:text-3xl">
+              Classroom &amp; Live Lectures
             </h1>
-            <p className="text-sm text-slate-600">
+            <p className="mt-1 text-sm text-slate-600">
               Join Live Classes, watch HD Lectures, complete Assignments &amp; claim Verified Certificates.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2.5">
-            {(user.role === 'admin' || user.role === 'teacher') && (
-              <button
-                type="button"
-                onClick={() => navigate('/portal')}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 py-2.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100"
-              >
-                <Settings className="h-3.5 w-3.5" />
-                <span>Manage Courses &amp; Batches</span>
-              </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {canManageLessons && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingLesson(null);
+                    setLessonModalOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-[#0284c7] px-3.5 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-[#0369a1]"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Add Lesson</span>
+                </button>
+                {activeCourse && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setCurriculumOpen(true)}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-white px-3.5 py-2.5 text-xs font-bold text-[#0284c7] shadow-xs hover:bg-sky-50"
+                    >
+                      <Layers className="h-3.5 w-3.5" />
+                      <span>Curriculum Builder</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCourseWizardOpen(true)}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-700 shadow-xs hover:bg-slate-50"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      <span>Edit Course</span>
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={() => navigate('/portal')}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-700 shadow-xs hover:bg-slate-50"
+                >
+                  <Settings className="h-3.5 w-3.5" />
+                  <span>Portal</span>
+                </button>
+              </>
             )}
             {activeCourse && (
               <select
@@ -479,10 +680,11 @@ export function LearnPage({ navigate }: LearnPageProps) {
                   setSelectedCourseId(nextId);
                   setTypeFilter('all');
                   setLockedNotice(null);
+                  setConfirmDeleteLessonId(null);
                   const first = data.lessonsByCourse[nextId]?.[0];
                   setSelectedLessonId(first?.id || '');
                 }}
-                className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800"
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-xs"
               >
                 {courses.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -493,6 +695,19 @@ export function LearnPage({ navigate }: LearnPageProps) {
             )}
           </div>
         </div>
+
+        {adminToast && (
+          <div className="mt-4 flex items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs font-bold text-emerald-800 shadow-xs">
+            <span>{adminToast}</span>
+            <button
+              type="button"
+              onClick={() => setAdminToast(null)}
+              className="rounded px-2 py-0.5 text-[11px] hover:bg-emerald-100"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
 
         {/* Learner XP, Streak & Badges Strip */}
         {rewards && (
@@ -794,6 +1009,19 @@ export function LearnPage({ navigate }: LearnPageProps) {
                       </h3>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
+                      {canManageLessons && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingLesson(activeLesson);
+                            setLessonModalOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3.5 py-2 text-xs font-bold text-[#0284c7] hover:bg-sky-100"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          <span>Edit Lesson</span>
+                        </button>
+                      )}
                       {safeSheetUrl &&
                         activeType !== 'lecture_sheet' &&
                         activeType !== 'pdf_notes' &&
@@ -1212,6 +1440,54 @@ export function LearnPage({ navigate }: LearnPageProps) {
           navigate(`/verify-certificate?cert=${encodeURIComponent(certNo)}`)
         }
       />
+
+      {canManageLessons && (
+        <>
+          <AdminLessonModal
+            open={lessonModalOpen}
+            lesson={editingLesson}
+            courses={courses}
+            batches={data.batches ?? []}
+            defaultCourseId={activeCourse?.id}
+            onClose={() => {
+              setLessonModalOpen(false);
+              setEditingLesson(null);
+            }}
+            onSaved={async (msg) => {
+              setAdminToast(msg);
+              await loadLearnWorkspace();
+              await refreshBootstrap();
+            }}
+          />
+
+          <CurriculumBuilderModal
+            open={curriculumOpen}
+            course={activeCourse ?? null}
+            batches={data.batches ?? []}
+            onClose={() => setCurriculumOpen(false)}
+            onChanged={async () => {
+              await loadLearnWorkspace();
+              await refreshBootstrap();
+            }}
+            onNotify={(msg) => setAdminToast(msg)}
+          />
+
+          <CourseWizardModal
+            open={courseWizardOpen}
+            course={activeCourse ?? null}
+            allCourses={data.allCourses}
+            branches={bootstrap?.branches ?? []}
+            instructors={bootstrap?.instructors ?? []}
+            batches={data.batches ?? []}
+            onClose={() => setCourseWizardOpen(false)}
+            onSaved={async (msg) => {
+              setAdminToast(msg);
+              await loadLearnWorkspace();
+              await refreshBootstrap();
+            }}
+          />
+        </>
+      )}
     </div>
   );
 }

@@ -90,6 +90,8 @@ export interface Instructor {
   branchId: string;
   bio: string;
   avatar: string;
+  youtubeUrl?: string;
+  facebookUrl?: string;
 }
 
 export type LessonType =
@@ -795,6 +797,7 @@ export interface HomepageConfig {
 }
 
 export interface CenterResultRecord {
+  id?: string;
   rollNumber: string;
   studentName: string;
   batchName: string;
@@ -807,6 +810,7 @@ export interface CenterResultRecord {
   gpaOrGrade: string;
   meritPosition: number;
   status: 'Passed' | 'Distinction';
+  publishedAt?: string;
 }
 
 export interface CategoryItem {
@@ -1173,6 +1177,16 @@ export interface SiteSettings {
   heroSlides: HeroSlide[];
   homepageConfig?: HomepageConfig;
   dashboardConfig?: DashboardCustomizationConfig;
+  boardResultConfig?: {
+    title: string;
+    subtitle: string;
+    portalHeading: string;
+    portalDescription: string;
+    eboardUrl: string;
+    eboardLabel: string;
+    educationBoardUrl: string;
+    educationBoardLabel: string;
+  };
 }
 
 export interface AcademicYear {

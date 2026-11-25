@@ -162,7 +162,7 @@ export function CoursesPage({ navigate, initialCategory = 'All Courses' }: Cours
             type="button"
             onClick={() => handleOpenEdit(course)}
             aria-label={`Edit ${course.title}`}
-            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-700 hover:border-indigo-400 hover:text-indigo-700"
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-700 hover:border-sky-400 hover:text-sky-700"
           >
             <Pencil className="h-3 w-3" />
             <span>Edit</span>
@@ -172,7 +172,7 @@ export function CoursesPage({ navigate, initialCategory = 'All Courses' }: Cours
             onClick={() => handleToggleStatus(course)}
             aria-label={live ? `Unpublish ${course.title}` : `Publish ${course.title}`}
             title={live ? 'Unpublish' : 'Publish'}
-            className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-600 hover:text-indigo-700"
+            className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-600 hover:text-sky-700"
           >
             {live ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
           </button>
@@ -181,7 +181,7 @@ export function CoursesPage({ navigate, initialCategory = 'All Courses' }: Cours
             onClick={() => handleDuplicate(course)}
             aria-label={`Duplicate ${course.title}`}
             title="Duplicate Course"
-            className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-600 hover:text-indigo-700"
+            className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-600 hover:text-sky-700"
           >
             <Copy className="h-3.5 w-3.5" />
           </button>
@@ -208,16 +208,16 @@ export function CoursesPage({ navigate, initialCategory = 'All Courses' }: Cours
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-indigo-50/90 via-slate-50 to-white pb-16 pt-10">
+    <div className="rm-pastel-bg min-h-screen pb-20 pt-10">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        {/* Header matching reference */}
+        {/* Header matching Screenshot 4 pastel palette */}
         <div className="text-center">
           <div className="inline-flex items-center gap-3">
-            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-md">
+            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-sky-600 text-white shadow-sm">
               <GraduationCap className="h-6 w-6" />
             </span>
-            <h1 className="text-3xl font-extrabold tracking-tight text-indigo-950 sm:text-4xl">
-              All Courses
+            <h1 className="text-3xl font-extrabold tracking-tight text-sky-500 sm:text-4xl">
+              All Courses &amp; Combos
             </h1>
           </div>
 
@@ -231,14 +231,14 @@ export function CoursesPage({ navigate, initialCategory = 'All Courses' }: Cours
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search HSC, SSC, IELTS, Spoken, Combo..."
                 aria-label="Search courses"
-                className="w-full rounded-full border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm text-slate-800 shadow-xs focus:border-indigo-500 focus:outline-none"
+                className="w-full rounded-full border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm text-slate-800 shadow-xs focus:border-sky-500 focus:outline-none"
               />
             </div>
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as CourseSortOption)}
               aria-label="Sort courses"
-              className="rounded-full border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 shadow-xs focus:border-indigo-500 focus:outline-none"
+              className="rounded-full border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 shadow-xs focus:border-sky-500 focus:outline-none"
             >
               <option value="featured">Sort: Featured</option>
               <option value="popular">Most Enrolled</option>
@@ -248,15 +248,15 @@ export function CoursesPage({ navigate, initialCategory = 'All Courses' }: Cours
             <button
               type="button"
               onClick={() => navigate('/verify-certificate')}
-              className="inline-flex items-center justify-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100"
+              className="inline-flex items-center justify-center gap-1.5 rounded-full border border-emerald-200 bg-white px-4 py-2.5 text-xs font-bold text-emerald-700 hover:bg-emerald-50"
             >
               <ShieldCheck className="h-4 w-4 text-emerald-600" />
               <span>Verify Certificate</span>
             </button>
           </div>
 
-          {/* Category / Batch Filter Tabs */}
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-2.5">
+          {/* Interactive Filter Tabs */}
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
             {dynamicFilterTabs.map((tab) => {
               const active = selectedCat === tab;
               return (
@@ -266,8 +266,8 @@ export function CoursesPage({ navigate, initialCategory = 'All Courses' }: Cours
                   onClick={() => setSelectedCat(tab)}
                   className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full px-4 py-2 text-xs font-bold transition-all sm:text-sm ${
                     active
-                      ? 'bg-indigo-600 text-white shadow-md'
-                      : 'border border-slate-200 bg-white text-slate-700 hover:border-indigo-300'
+                      ? 'bg-sky-600 text-white shadow-sm'
+                      : 'border border-slate-200 bg-white text-slate-700 hover:border-sky-300'
                   }`}
                 >
                   <span>{tab}</span>
@@ -286,9 +286,9 @@ export function CoursesPage({ navigate, initialCategory = 'All Courses' }: Cours
 
         {/* Admin & Teacher Quick Management Strip */}
         {canManageCourses && (
-          <div className="mt-8 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-indigo-200 bg-white p-4 shadow-xs">
+          <div className="mt-8 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-sky-200 bg-white/95 p-4 shadow-xs">
             <div className="flex items-center gap-3">
-              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#062436] text-amber-400">
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-600 text-white">
                 <Settings2 className="h-4 w-4" />
               </span>
               <div>
@@ -296,7 +296,7 @@ export function CoursesPage({ navigate, initialCategory = 'All Courses' }: Cours
                   {isAdmin ? 'Admin Course Control Mode' : 'Instructor Course Control Mode'}
                 </p>
                 <p className="text-xs text-slate-600">
-                  Create via 5-Step Wizard, duplicate, publish/unpublish, or open the Full Portal Console for Curriculum Builder &amp; Analytics.
+                  Create, edit, duplicate, publish/unpublish, or remove any course &amp; combo package.
                 </p>
               </div>
             </div>
@@ -306,14 +306,14 @@ export function CoursesPage({ navigate, initialCategory = 'All Courses' }: Cours
                   type="checkbox"
                   checked={showDrafts}
                   onChange={(e) => setShowDrafts(e.target.checked)}
-                  className="h-4 w-4 rounded accent-indigo-600"
+                  className="h-4 w-4 rounded accent-sky-600"
                 />
                 <span>Show Drafts</span>
               </label>
               <button
                 type="button"
                 onClick={handleOpenCreate}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-indigo-700"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-sky-700"
               >
                 <Plus className="h-4 w-4" />
                 <span>5-Step Course Wizard</span>
@@ -360,47 +360,50 @@ export function CoursesPage({ navigate, initialCategory = 'All Courses' }: Cours
                 setSelectedCat('All Courses');
                 setSearch('');
               }}
-              className="mt-4 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white"
+              className="mt-4 rounded-xl bg-sky-600 px-5 py-2.5 text-sm font-semibold text-white"
             >
               Reset Filters
             </button>
           </div>
         ) : (
           <div className="mt-10 space-y-12">
-            {/* COMBOS SECTION matching Redwan's Method */}
+            {/* COMBOS SECTION matching Screenshot 4 */}
             {combos.length > 0 && (
               <section aria-labelledby="combos-heading">
-                <div className="mb-5 flex items-center justify-between">
+                <div className="mb-6 flex items-center justify-between">
                   <h2
                     id="combos-heading"
                     className="flex items-center gap-2 text-xl font-extrabold text-slate-900"
                   >
                     <Layers className="h-5 w-5 text-indigo-600" />
-                    <span>Combos</span>
+                    <span>Combo Bundles</span>
                   </h2>
                   <span className="font-mono-tabular text-xs font-semibold text-slate-500">
                     {combos.length} bundle{combos.length > 1 ? 's' : ''}
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                <div className="grid grid-cols-1 gap-7 md:grid-cols-2 lg:grid-cols-3">
                   {combos.map((course) => {
                     const pricing = calculateDiscountedPrice(course.price, course.originalPrice);
                     const subCourses = course.includedCourses ?? [];
+                    const savings = Math.max(0, (course.originalPrice || 0) - course.price);
                     return (
                       <article
                         key={course.id}
-                        className="flex flex-col justify-between overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs transition-all hover:-translate-y-0.5 hover:shadow-md"
+                        className="flex flex-col justify-between overflow-hidden rounded-2xl bg-white shadow-[0_10px_35px_rgba(15,23,42,0.06)] transition-transform duration-200 hover:-translate-y-0.5"
                       >
                         <div>
-                          <div className="relative aspect-[16/10] w-full overflow-hidden bg-slate-900">
+                          <div
+                            onClick={() => navigate(`/course/${course.slug}`)}
+                            className="relative aspect-[16/9] w-full cursor-pointer overflow-hidden bg-slate-900"
+                          >
                             <img
                               src={course.thumbnail}
                               alt={course.title}
                               className="h-full w-full object-cover"
                               referrerPolicy="no-referrer"
                             />
-                            <div className="absolute inset-0 bg-gradient-to-t from-slate-950/65 via-transparent to-transparent" />
                             <span className="absolute left-3 top-3 rounded-full bg-indigo-600 px-3 py-1 text-xs font-bold text-white shadow">
                               Combo
                             </span>
@@ -410,32 +413,37 @@ export function CoursesPage({ navigate, initialCategory = 'All Courses' }: Cours
                           </div>
 
                           <div className="p-5">
-                            <div className="flex items-center justify-between text-xs font-semibold text-indigo-700">
-                              <span>{subCourses.length || 3} courses</span>
-                              <span className="inline-flex items-center gap-1 font-mono-tabular text-slate-500">
+                            <div className="flex items-center justify-between">
+                              <span className="rounded-md bg-indigo-50 px-2.5 py-1 text-xs font-bold text-indigo-700">
+                                {subCourses.length || 3} courses
+                              </span>
+                              <span className="font-mono-tabular inline-flex items-center gap-1 text-xs text-slate-500">
                                 <Users className="h-3.5 w-3.5" />
                                 {course.enrolledCount.toLocaleString()}
                               </span>
                             </div>
 
-                            <h3 className="mt-2 line-clamp-2 text-lg font-extrabold text-slate-900">
+                            <h3
+                              onClick={() => navigate(`/course/${course.slug}`)}
+                              className="mt-3 line-clamp-2 cursor-pointer text-lg font-extrabold text-slate-900 hover:text-indigo-700"
+                            >
                               {course.title}
                             </h3>
 
                             {subCourses.length > 0 && (
-                              <div className="mt-4 rounded-xl bg-slate-50 p-3">
-                                <p className="mb-2 text-center text-xs font-semibold text-slate-500">
+                              <div className="mt-4 rounded-xl bg-slate-50 p-3.5">
+                                <p className="mb-2.5 text-center text-xs font-semibold text-slate-600">
                                   Courses:
                                 </p>
                                 <div
-                                  className={`grid gap-1.5 ${
-                                    subCourses.length >= 4 ? 'grid-cols-2' : 'grid-cols-1'
+                                  className={`grid gap-2 ${
+                                    subCourses.length >= 2 ? 'grid-cols-2' : 'grid-cols-1'
                                   }`}
                                 >
                                   {subCourses.map((sub) => (
                                     <div
                                       key={sub}
-                                      className="rounded-lg border border-sky-100 bg-white px-2.5 py-1.5 text-center text-xs font-semibold text-sky-700"
+                                      className="flex items-center justify-center rounded-lg border border-sky-200/80 bg-sky-50/70 px-2.5 py-2 text-center text-[11px] font-bold uppercase tracking-tight text-sky-700"
                                     >
                                       {sub}
                                     </div>
@@ -447,9 +455,9 @@ export function CoursesPage({ navigate, initialCategory = 'All Courses' }: Cours
                         </div>
 
                         <div>
-                          <div className="flex items-center justify-between border-t border-slate-100 px-5 py-4">
-                            <div className="flex items-baseline gap-2">
-                              <span className="font-mono-tabular text-xl font-extrabold text-indigo-700">
+                          <div className="flex items-center justify-between px-5 pb-5 pt-2">
+                            <div className="flex items-baseline gap-2.5">
+                              <span className="font-mono-tabular text-2xl font-extrabold text-indigo-600">
                                 {course.price === 0 ? 'Free' : `৳${course.price}`}
                               </span>
                               {course.originalPrice > course.price && (
@@ -457,19 +465,21 @@ export function CoursesPage({ navigate, initialCategory = 'All Courses' }: Cours
                                   ৳{course.originalPrice}
                                 </span>
                               )}
-                              {pricing.baseDiscountPercent > 0 && course.price > 0 && (
-                                <span className="font-mono-tabular text-xs font-bold text-emerald-700">
-                                  {pricing.baseDiscountPercent}% OFF
+                            </div>
+                            <div className="flex items-center gap-3">
+                              {savings > 0 && (
+                                <span className="font-mono-tabular text-xs font-bold text-emerald-600">
+                                  Save ৳{savings}
                                 </span>
                               )}
+                              <button
+                                type="button"
+                                onClick={() => navigate(`/course/${course.slug}`)}
+                                className="rounded-xl bg-sky-50 px-3.5 py-2 text-xs font-bold text-sky-700 transition-colors hover:bg-sky-600 hover:text-white"
+                              >
+                                {pricing.baseDiscountPercent > 0 ? 'Enroll' : 'View'}
+                              </button>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => navigate(`/course/${course.slug}`)}
-                              className="rounded-xl bg-[#062436] px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-indigo-600"
-                            >
-                              View Details
-                            </button>
                           </div>
                           {renderAdminControls(course)}
                         </div>
@@ -483,7 +493,7 @@ export function CoursesPage({ navigate, initialCategory = 'All Courses' }: Cours
             {/* INDIVIDUAL COURSES SECTION */}
             {regular.length > 0 && (
               <section aria-labelledby="regular-courses-heading">
-                <div className="mb-5 flex items-center justify-between">
+                <div className="mb-6 flex items-center justify-between">
                   <h2
                     id="regular-courses-heading"
                     className="text-xl font-extrabold text-slate-900"
@@ -495,23 +505,26 @@ export function CoursesPage({ navigate, initialCategory = 'All Courses' }: Cours
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                <div className="grid grid-cols-1 gap-7 md:grid-cols-2 lg:grid-cols-3">
                   {regular.map((course) => {
                     const pricing = calculateDiscountedPrice(course.price, course.originalPrice);
+                    const savings = Math.max(0, (course.originalPrice || 0) - course.price);
                     return (
                       <article
                         key={course.id}
-                        className="flex flex-col justify-between overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs transition-all hover:-translate-y-0.5 hover:shadow-md"
+                        className="flex flex-col justify-between overflow-hidden rounded-2xl bg-white shadow-[0_10px_35px_rgba(15,23,42,0.06)] transition-transform duration-200 hover:-translate-y-0.5"
                       >
                         <div>
-                          <div className="relative aspect-[16/10] w-full overflow-hidden bg-slate-900">
+                          <div
+                            onClick={() => navigate(`/course/${course.slug}`)}
+                            className="relative aspect-[16/9] w-full cursor-pointer overflow-hidden bg-slate-900"
+                          >
                             <img
                               src={course.thumbnail}
                               alt={course.title}
                               className="h-full w-full object-cover"
                               referrerPolicy="no-referrer"
                             />
-                            <div className="absolute inset-0 bg-gradient-to-t from-slate-950/75 via-transparent to-transparent" />
                             <span className="absolute right-3 top-3 rounded-full bg-slate-950/75 px-3 py-1 text-xs font-semibold text-white">
                               {course.levelTag}
                             </span>
@@ -522,7 +535,7 @@ export function CoursesPage({ navigate, initialCategory = 'All Courses' }: Cours
                             ) : (
                               pricing.baseDiscountPercent > 0 && (
                                 <span className="font-mono-tabular absolute left-3 top-3 rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white">
-                                  {pricing.baseDiscountPercent}% OFF
+                                  -{pricing.baseDiscountPercent}%
                                 </span>
                               )
                             )}
@@ -538,7 +551,10 @@ export function CoursesPage({ navigate, initialCategory = 'All Courses' }: Cours
                               </span>
                             </div>
 
-                            <h3 className="mt-2 line-clamp-2 text-lg font-extrabold text-slate-900">
+                            <h3
+                              onClick={() => navigate(`/course/${course.slug}`)}
+                              className="mt-2 line-clamp-2 cursor-pointer text-lg font-extrabold text-slate-900 hover:text-sky-600"
+                            >
                               {course.title}
                             </h3>
                             <p className="mt-1 line-clamp-2 text-sm text-slate-600">
@@ -550,7 +566,7 @@ export function CoursesPage({ navigate, initialCategory = 'All Courses' }: Cours
                         <div>
                           <div className="flex items-center justify-between border-t border-slate-100 px-5 py-4">
                             <div className="flex items-baseline gap-2">
-                              <span className="font-mono-tabular text-xl font-extrabold text-indigo-700">
+                              <span className="font-mono-tabular text-xl font-extrabold text-indigo-600">
                                 {course.price === 0 ? 'Free' : `৳${course.price}`}
                               </span>
                               {course.originalPrice > course.price && (
@@ -559,13 +575,20 @@ export function CoursesPage({ navigate, initialCategory = 'All Courses' }: Cours
                                 </span>
                               )}
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => navigate(`/course/${course.slug}`)}
-                              className="rounded-xl bg-[#062436] px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-indigo-600"
-                            >
-                              View Details
-                            </button>
+                            <div className="flex items-center gap-2.5">
+                              {savings > 0 && (
+                                <span className="font-mono-tabular text-xs font-bold text-emerald-600">
+                                  Save ৳{savings}
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => navigate(`/course/${course.slug}`)}
+                                className="rounded-xl bg-sky-600 px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-sky-700"
+                              >
+                                View Details
+                              </button>
+                            </div>
                           </div>
                           {renderAdminControls(course)}
                         </div>

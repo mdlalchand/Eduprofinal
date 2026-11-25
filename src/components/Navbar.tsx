@@ -1,4 +1,4 @@
-import { ExternalLink, Menu, ShoppingBag, User as UserIcon, X } from 'lucide-react';
+import { ExternalLink, Menu, ShoppingBag, User as UserIcon, UserRound, X } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
@@ -116,15 +116,30 @@ export function Navbar({ currentPath, navigate }: NavbarProps) {
           )}
 
           {user ? (
-            <button
-              type="button"
-              onClick={() => handleNav('/portal')}
-              className="inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-[#062436] px-3 text-xs font-semibold text-white transition-colors hover:bg-[#0b3854] sm:h-10 sm:gap-2 sm:px-4 sm:text-sm"
-            >
-              <UserIcon className="h-3.5 w-3.5 text-amber-400 sm:h-4 sm:w-4" />
-              <span className="sm:hidden">Portal</span>
-              <span className="hidden sm:inline">Unified Portal</span>
-            </button>
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <button
+                type="button"
+                onClick={() => handleNav('/profile')}
+                aria-label="Open Profile"
+                className={`inline-flex h-9 w-9 shrink-0 items-center justify-center whitespace-nowrap rounded-full border text-xs font-semibold transition-colors sm:h-10 sm:w-auto sm:gap-1.5 sm:px-3.5 sm:text-sm ${
+                  currentPath === '/profile'
+                    ? 'border-sky-500 bg-sky-50 text-sky-700'
+                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                <UserRound className="h-4 w-4 text-sky-600" />
+                <span className="hidden sm:inline">Profile</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleNav('/portal')}
+                className="inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-[#062436] px-3 text-xs font-semibold text-white transition-colors hover:bg-[#0b3854] sm:h-10 sm:gap-2 sm:px-4 sm:text-sm"
+              >
+                <UserIcon className="h-3.5 w-3.5 text-amber-400 sm:h-4 sm:w-4" />
+                <span className="sm:hidden">Portal</span>
+                <span className="hidden sm:inline">Unified Portal</span>
+              </button>
+            </div>
           ) : (
             <button
               type="button"

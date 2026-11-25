@@ -1,6 +1,8 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import express, { type Request, type Response } from 'express';
-import type { AiAgentRole } from '../types';
+import type { AiAgentRole, UserRole } from '../types';
+import { consumePublicRateLimit } from './publicRedaction';
+import { getClientIp } from './security';
 import { getDb, recordAuditLog, saveDb } from './store';
 
 const AGENT_INSTRUCTIONS: Record<AiAgentRole, string> = {
@@ -23,16 +25,51 @@ function createGeminiClient(): GoogleGenAI | null {
     apiKey: key,
     httpOptions: {
       headers: {
-        'User-Agent': 'aistudio-build',
+        'User-Agent': 'edupro-lms',
       },
     },
   });
 }
 
-export function createAiRouter(getAuthUser: (req: Request) => { id: string; name: string; role: any } | null) {
+export function createAiRouter(getAuthUser: (req: Request) => { id: string; name: string; role: UserRole } | null) {
   const router = express.Router();
 
   router.post('/chat', async (req: Request, res: Response) => {
+    const agentRole = (['student', 'teacher', 'admin', 'support', 'learning'].includes(
+      String(req.body?.agent)
+    )
+      ? req.body.agent
+      : 'support') as AiAgentRole;
+    const message = String(req.body?.message ?? '').trim().slice(0, 1500);
+    if (!message) {
+      res.status(400).json({ error: 'Please enter a message for the AI Agent.' });
+      return;
+    }
+
+    const authUser = getAuthUser(req);
+    if (agentRole === 'admin' && authUser?.role !== 'admin') {
+      res.status(403).json({ error: 'Main Admin authorization is required for AI Admin Strategist.' });
+      return;
+    }
+    if (agentRole === 'teacher' && authUser?.role !== 'admin' && authUser?.role !== 'teacher') {
+      res.status(403).json({ error: 'Teacher or Admin authorization is required for AI Teacher Copilot.' });
+      return;
+    }
+    if (agentRole === 'learning' && !authUser) {
+      res.status(401).json({ error: 'Please sign in to access personalized AI Study Advisor.' });
+      return;
+    }
+    if (!authUser) {
+      const rateCheck = consumePublicRateLimit(`ai-guest:${getClientIp(req)}`, 20, 5 * 60 * 1000);
+      if (!rateCheck.allowed) {
+        res.setHeader('Retry-After', String(rateCheck.retryAfterSeconds));
+        res.status(429).json({
+          error: `Guest AI chat rate limit reached. Try again in ${rateCheck.retryAfterSeconds}s or sign in.`,
+        });
+        return;
+      }
+    }
+
     const ai = createGeminiClient();
     if (!ai) {
       res.status(503).json({
@@ -42,21 +79,9 @@ export function createAiRouter(getAuthUser: (req: Request) => { id: string; name
       return;
     }
 
-    const agentRole = (['student', 'teacher', 'admin', 'support', 'learning'].includes(
-      String(req.body?.agent)
-    )
-      ? req.body.agent
-      : 'support') as AiAgentRole;
-    const message = String(req.body?.message ?? '').trim();
-    if (!message) {
-      res.status(400).json({ error: 'Please enter a message for the AI Agent.' });
-      return;
-    }
-
-    const authUser = getAuthUser(req);
     const db = getDb();
     const contextSummary =
-      agentRole === 'admin'
+      agentRole === 'admin' && authUser?.role === 'admin'
         ? `Branches: ${db.branches.length}, Active Courses: ${db.courses.length}, Students/Users: ${db.users.length}, Enrollments: ${db.enrollments.length}, Exam Attempts: ${db.examAttempts.length}.`
         : `Active Courses: ${db.courses.map((c) => `${c.title} (৳${c.price})`).slice(0, 5).join('; ')}. Branches: Mirpur DOHS, Uttara Sector 7, Chattogram GEC.`;
 

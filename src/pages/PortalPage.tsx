@@ -160,6 +160,7 @@ interface GuardianChildData {
 
 interface PortalPayload {
   role: UserRole;
+  guardianLinkCode?: string;
   branch?: Branch;
   metrics: Record<string, number>;
   courses?: Course[];
@@ -308,6 +309,7 @@ export function PortalPage({ navigate }: PortalPageProps) {
   // My Storage & Guardian link state
   const [storageModalOpen, setStorageModalOpen] = useState(false);
   const [guardianLinkInput, setGuardianLinkInput] = useState('');
+  const [guardianVerifyInput, setGuardianVerifyInput] = useState('');
   const [guardianLinkError, setGuardianLinkError] = useState<string | null>(null);
   const [guardianLinking, setGuardianLinking] = useState(false);
 
@@ -606,14 +608,22 @@ export function PortalPage({ navigate }: PortalPageProps) {
   const handleLinkGuardianStudent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!guardianLinkInput.trim()) return;
+    if (!guardianVerifyInput.trim()) {
+      setGuardianLinkError('Enter the student’s registered phone number or guardian linking code.');
+      return;
+    }
     setGuardianLinkError(null);
     setGuardianLinking(true);
     try {
       const res = await apiFetch<{ student: User }>('/api/portal/guardian/link-student', {
         method: 'POST',
-        body: JSON.stringify({ query: guardianLinkInput.trim() }),
+        body: JSON.stringify({
+          query: guardianLinkInput.trim(),
+          verification: guardianVerifyInput.trim(),
+        }),
       });
       setGuardianLinkInput('');
+      setGuardianVerifyInput('');
       await Promise.all([loadPortal(), refreshBootstrap()]);
       notify(`Linked student ${res.student.name} (${res.student.rollNumber || res.student.email})!`);
     } catch (err) {
@@ -2633,7 +2643,7 @@ export function PortalPage({ navigate }: PortalPageProps) {
                           <span>Link Another Child / Student Account</span>
                         </h2>
                         <p className="mt-0.5 text-xs text-slate-500">
-                          Enter a student&apos;s Roll Number (e.g. <span className="font-mono-tabular font-bold">AEC-2026-101</span>) or registered email to monitor their live progress.
+                          Enter a student&apos;s Roll Number (e.g. <span className="font-mono-tabular font-bold">AEC-2026-101</span>) or Email along with their registered phone or Guardian Linking Code.
                         </p>
                       </div>
                       <button
@@ -2657,14 +2667,22 @@ export function PortalPage({ navigate }: PortalPageProps) {
                         onChange={(e) => setGuardianLinkInput(e.target.value)}
                         placeholder="Student Roll Number or Email (e.g. AEC-2026-101)"
                         aria-label="Student roll number or email"
-                        className="min-w-0 flex-1 rounded-xl border border-slate-300 px-3.5 py-2 text-xs font-medium"
+                        className="min-w-[200px] flex-1 rounded-xl border border-slate-300 px-3.5 py-2 text-xs font-medium"
+                      />
+                      <input
+                        type="text"
+                        value={guardianVerifyInput}
+                        onChange={(e) => setGuardianVerifyInput(e.target.value)}
+                        placeholder="Student Phone or Linking Code"
+                        aria-label="Student phone or guardian linking code"
+                        className="font-mono-tabular min-w-[180px] flex-1 rounded-xl border border-slate-300 px-3.5 py-2 text-xs font-medium"
                       />
                       <button
                         type="submit"
                         disabled={guardianLinking}
                         className="rounded-xl bg-[#062436] px-4 py-2 text-xs font-bold text-white hover:bg-indigo-600 disabled:opacity-60"
                       >
-                        {guardianLinking ? 'Linking...' : 'Link Student'}
+                        {guardianLinking ? 'Verifying...' : 'Verify & Link Student'}
                       </button>
                     </div>
                   </form>
@@ -3133,7 +3151,7 @@ export function PortalPage({ navigate }: PortalPageProps) {
                     <p className="mt-1 text-sm text-slate-600">
                       Download the standalone Laravel 13 project archive containing the White-Label
                       Web Installer (/install), non-destructive domain update &amp; backup system,
-                      zero demo data, and 5-role unified portal with zero AI Studio files.
+                      zero demo data, and unified multi-role portal ready for production hosting.
                     </p>
                     <a
                       href="/downloads/academy-lms-laravel13.zip"

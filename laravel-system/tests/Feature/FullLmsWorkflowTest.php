@@ -176,13 +176,32 @@ class FullLmsWorkflowTest extends TestCase
         $student = User::where('email', 'samira@student.example')->firstOrFail();
         $this->assertStringStartsWith('NST-' . date('Y') . '-', (string) $student->roll_number);
 
-        // 4. Student enrolls, completes lesson, submits exam, buys product, claims ebook, likes community post
+        // 4. Student enrolls (pending until signed webhook confirms payment), completes lesson, submits exam, buys product, claims free ebook, likes community post
         $this->actingAs($student)->post(route('courses.enroll', $course), [
             'branch_id' => $branch->id,
             'payment_method' => 'Online Card / Gateway',
         ])->assertRedirect();
         $enrollment = Enrollment::where('user_id', $student->id)->where('course_id', $course->id)->firstOrFail();
-        $this->assertSame('approved', $enrollment->status);
+        $this->assertSame('pending', $enrollment->status);
+
+        $webhookPayload = json_encode([
+            'enrollment_id' => $enrollment->id,
+            'trx_id' => 'GW-TEST-9001',
+            'amount' => $enrollment->amount_paid,
+            'status' => 'SUCCESS',
+        ]);
+        $webhookSecret = (string) (env('PAYMENT_WEBHOOK_SECRET') ?: config('app.key'));
+        $webhookSig = hash_hmac('sha256', (string) $webhookPayload, $webhookSecret);
+        $this->call(
+            'POST',
+            '/payments/webhook/online',
+            [],
+            [],
+            [],
+            ['HTTP_X_WEBHOOK_SIGNATURE' => $webhookSig, 'CONTENT_TYPE' => 'application/json'],
+            (string) $webhookPayload
+        )->assertOk()->assertJson(['ok' => true, 'status' => 'approved']);
+        $this->assertSame('approved', $enrollment->fresh()->status);
 
         $this->actingAs($student)->get('/learn')->assertOk()->assertSee('Load Balancing Basics');
         $this->actingAs($student)->post(route('learn.progress'), [

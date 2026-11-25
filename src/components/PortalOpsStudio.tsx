@@ -608,6 +608,8 @@ export function CatalogContentPanel({
   const [inEducation, setInEducation] = useState('MA in English, University of Dhaka');
   const [inBranchId, setInBranchId] = useState(branches[0]?.id ?? 'br-mirpur');
   const [inAvatar, setInAvatar] = useState('/src/assets/images/instructor_portrait_lead_1795411661581.jpg');
+  const [inYoutubeUrl, setInYoutubeUrl] = useState('https://youtube.com');
+  const [inFacebookUrl, setInFacebookUrl] = useState('https://facebook.com');
 
   // Category form + edit state
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
@@ -674,6 +676,8 @@ export function CatalogContentPanel({
     setInEducation('MA in English, University of Dhaka');
     setInBranchId(branches[0]?.id ?? 'br-mirpur');
     setInAvatar('/src/assets/images/instructor_portrait_lead_1795411661581.jpg');
+    setInYoutubeUrl('https://youtube.com');
+    setInFacebookUrl('https://facebook.com');
   };
 
   const resetCategoryForm = () => {
@@ -1201,6 +1205,8 @@ export function CatalogContentPanel({
                 education: inEducation.trim(),
                 branchId: inBranchId,
                 avatar: inAvatar,
+                youtubeUrl: inYoutubeUrl.trim(),
+                facebookUrl: inFacebookUrl.trim(),
               };
               if (editingInstructorId) {
                 await apiFetch(`/api/portal/instructors/${editingInstructorId}`, {
@@ -1278,6 +1284,22 @@ export function CatalogContentPanel({
                 className="rounded-xl border border-slate-300 px-3 py-2 text-xs"
               />
             </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <input
+                type="url"
+                placeholder="YouTube Channel URL"
+                value={inYoutubeUrl}
+                onChange={(e) => setInYoutubeUrl(e.target.value)}
+                className="rounded-xl border border-slate-300 px-3 py-2 text-xs"
+              />
+              <input
+                type="url"
+                placeholder="Facebook Page URL"
+                value={inFacebookUrl}
+                onChange={(e) => setInFacebookUrl(e.target.value)}
+                className="rounded-xl border border-slate-300 px-3 py-2 text-xs"
+              />
+            </div>
             <ImageUploadField label="Instructor Portrait" value={inAvatar} onChange={setInAvatar} />
             <button
               type="submit"
@@ -1318,6 +1340,8 @@ export function CatalogContentPanel({
                       setInEducation(ins.education);
                       setInBranchId(ins.branchId);
                       setInAvatar(ins.avatar);
+                      setInYoutubeUrl(ins.youtubeUrl || 'https://youtube.com');
+                      setInFacebookUrl(ins.facebookUrl || 'https://facebook.com');
                     }}
                     className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
                   >

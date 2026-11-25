@@ -16,6 +16,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(append: [
             EnsureInstalled::class,
         ]);
+        $middleware->validateCsrfTokens(except: [
+            'payments/webhook/*',
+        ]);
         $middleware->alias([
             'role' => RoleMiddleware::class,
         ]);

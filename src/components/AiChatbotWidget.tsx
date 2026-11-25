@@ -1,5 +1,5 @@
 import { Bot, Send, Sparkles, Volume2, X } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import type { AiAgentRole } from '../types';
 
@@ -14,9 +14,24 @@ const AGENT_OPTIONS: { id: AiAgentRole; label: string; hint: string }[] = [
 export function AiChatbotWidget() {
   const { user, apiFetch } = useAuth();
   const [open, setOpen] = useState(false);
+  const availableAgents = useMemo(
+    () =>
+      AGENT_OPTIONS.filter((opt) => {
+        if (opt.id === 'admin') return user?.role === 'admin';
+        if (opt.id === 'teacher') return user?.role === 'admin' || user?.role === 'teacher';
+        if (opt.id === 'learning') return Boolean(user);
+        return true;
+      }),
+    [user]
+  );
   const [agent, setAgent] = useState<AiAgentRole>(
     user?.role === 'teacher' ? 'teacher' : user?.role === 'admin' ? 'admin' : 'student'
   );
+  useEffect(() => {
+    if (!availableAgents.some((opt) => opt.id === agent)) {
+      setAgent(availableAgents[0]?.id ?? 'student');
+    }
+  }, [agent, availableAgents]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -109,7 +124,7 @@ export function AiChatbotWidget() {
               onChange={(e) => setAgent(e.target.value as AiAgentRole)}
               className="w-full rounded-xl border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800"
             >
-              {AGENT_OPTIONS.map((opt) => (
+              {availableAgents.map((opt) => (
                 <option key={opt.id} value={opt.id}>
                   {opt.label} — {opt.hint}
                 </option>

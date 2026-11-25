@@ -1,73 +1,24 @@
 @import "tailwindcss";
-@custom-variant dark (&:where(.dark, .dark *));
 
 @layer base {
-  html {
-    font-family: 'Plus Jakarta Sans', 'Hind Siliguri', system-ui, -apple-system, sans-serif;
-    scroll-behavior: smooth;
-  }
-
-  .font-mono-tabular {
-    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
-    font-variant-numeric: tabular-nums;
-  }
-}
-
-@keyframes marquee-left {
-  0% {
-    transform: translateX(0);
-  }
-  100% {
-    transform: translateX(-50%);
-  }
-}
-
-@keyframes marquee-right {
-  0% {
-    transform: translateX(-50%);
-  }
-  100% {
-    transform: translateX(0);
-  }
-}
-
-.animate-marquee-left {
-  animation: marquee-left 42s linear infinite;
-}
-
-.animate-marquee-right {
-  animation: marquee-right 46s linear infinite;
-}
-
-.marquee-pause:hover .animate-marquee-left,
-.marquee-pause:hover .animate-marquee-right {
-  animation-play-state: paused;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .animate-marquee-left,
-  .animate-marquee-right {
-    animation: none;
-  }
-}
-
-@media print {
-  .no-print {
-    display: none !important;
-  }
-
   body {
-    background: #ffffff !important;
-    color: #0f172a !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    background-color: #f8fafc;
+    color: #0f172a;
+    -webkit-font-smoothing: antialiased;
   }
 
-  .print-sheet {
-    box-shadow: none !important;
-    border-color: #cbd5e1 !important;
-    width: 100% !important;
-    max-width: 100% !important;
-    margin: 0 !important;
+  h1, h2, h3 {
+    text-wrap: balance;
   }
 }
+
+.font-mono-tabular {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.rm-pastel-bg {
+  background: radial-gradient(circle at 12% 10%, #f3e8ff 0%, #eef2ff 45%, #e0f2fe 100%);
+}
+

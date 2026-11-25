@@ -122,6 +122,15 @@
                         <label for="db_password" class="block text-xs font-semibold text-slate-700 mb-1">DB Password</label>
                         <input id="db_password" type="password" name="db_password" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm">
                     </div>
+                    <div id="db-ssl-wrap" class="hidden">
+                        <label for="db_sslmode" class="block text-xs font-semibold text-slate-700 mb-1">Database SSL Mode</label>
+                        <select id="db_sslmode" name="db_sslmode" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white">
+                            <option value="prefer" @selected(old('db_sslmode', 'prefer') === 'prefer')>Prefer TLS</option>
+                            <option value="require" @selected(old('db_sslmode') === 'require')>Require TLS</option>
+                            <option value="verify-full" @selected(old('db_sslmode') === 'verify-full')>Verify Full (Strict CA)</option>
+                            <option value="disable" @selected(old('db_sslmode') === 'disable')>Disable (Local Dev Only)</option>
+                        </select>
+                    </div>
                 </div>
             </div>
 
@@ -152,7 +161,7 @@
     <script>
         function toggleDbFields(driver) {
             const isSqlServer = driver === 'mysql' || driver === 'pgsql';
-            ['db-host-wrap', 'db-port-wrap', 'db-user-wrap', 'db-pass-wrap'].forEach((id) => {
+            ['db-host-wrap', 'db-port-wrap', 'db-user-wrap', 'db-pass-wrap', 'db-ssl-wrap'].forEach((id) => {
                 document.getElementById(id).classList.toggle('hidden', !isSqlServer);
             });
             const dbInput = document.getElementById('db_database');

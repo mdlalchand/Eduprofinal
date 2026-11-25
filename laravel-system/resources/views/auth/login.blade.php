@@ -71,9 +71,15 @@
                     </select>
                 </div>
             </div>
-            <div>
-                <label for="reg_roll_link" class="block text-xs font-semibold text-slate-700 mb-1">Student Roll ID (Guardians only, optional)</label>
-                <input id="reg_roll_link" type="text" name="student_roll_link" placeholder="{{ $brand['roll_prefix'] ?? 'STD' }}-{{ date('Y') }}-1001" class="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                    <label for="reg_roll_link" class="block text-xs font-semibold text-slate-700 mb-1">Student Roll ID (Guardians only)</label>
+                    <input id="reg_roll_link" type="text" name="student_roll_link" value="{{ old('student_roll_link') }}" placeholder="{{ $brand['roll_prefix'] ?? 'STD' }}-{{ date('Y') }}-1001" class="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm">
+                </div>
+                <div>
+                    <label for="reg_student_verify" class="block text-xs font-semibold text-slate-700 mb-1">Student Phone or Link Code</label>
+                    <input id="reg_student_verify" type="text" name="student_verification" value="{{ old('student_verification') }}" placeholder="Registered phone or STD-XXXXXX" class="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm">
+                </div>
             </div>
             <div>
                 <label for="reg_password" class="block text-xs font-semibold text-slate-700 mb-1">Password (6+ chars)</label>

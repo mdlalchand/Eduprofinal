@@ -77,7 +77,7 @@ export function AdminLessonModal({
       setLiveJoinUrl('https://zoom.us/j/98541236000');
       setLiveStatus('scheduled');
       setScheduledAt('2026-04-28 08:00 PM');
-      setLectureSheetUrl('/downloads/aloms-english-center-laravel.zip');
+      setLectureSheetUrl('');
       setSheetSummary('');
       setIsFreePreview(false);
     }

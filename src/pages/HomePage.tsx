@@ -5,11 +5,13 @@ import {
   BookOpen,
   Briefcase,
   ChevronRight,
+  Download,
   GraduationCap,
   Landmark,
   Languages,
   Layers,
   Play,
+  Server,
   Star,
   Users,
   Video,
@@ -657,6 +659,46 @@ export function HomePage({ navigate }: HomePageProps) {
               ))}
             </div>
           )}
+        </div>
+      </section>
+
+      {/* PRODUCTION LARAVEL INSTALLER DOWNLOAD SECTION */}
+      <section className="border-t border-slate-200 bg-white py-14">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col justify-between gap-6 rounded-2xl border border-slate-200 bg-gradient-to-br from-[#062436] to-[#0a3852] p-6 text-white shadow-lg sm:p-8 lg:flex-row lg:items-center">
+            <div className="max-w-2xl space-y-2">
+              <div className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-3 py-1 text-xs font-bold uppercase tracking-wider text-amber-300">
+                <Server className="h-3.5 w-3.5" />
+                <span>Primary Production Backend · Laravel 13</span>
+              </div>
+              <h2
+                style={{ textWrap: 'balance' }}
+                className="text-2xl font-extrabold tracking-tight text-white sm:text-3xl"
+              >
+                Ready-to-Install Production Package
+              </h2>
+              <p className="text-sm leading-relaxed text-slate-200">
+                Deploy the complete Laravel 13 LMS platform on any PHP 8.3+ server with the
+                white-label <code className="rounded bg-white/15 px-1.5 py-0.5 text-xs">/install</code>{' '}
+                wizard, encrypted sessions, MySQL/PostgreSQL SSL support, signed payment webhooks,
+                and SHA-256 verified backup &amp; non-destructive updater.
+              </p>
+            </div>
+            <div className="flex shrink-0 flex-col gap-2 sm:flex-row lg:flex-col">
+              <a
+                href="/downloads/academy-lms-laravel13.zip"
+                download="academy-lms-laravel13.zip"
+                data-testid="download-laravel-zip"
+                className="inline-flex items-center justify-center gap-2.5 rounded-xl bg-amber-400 px-6 py-3.5 text-sm font-extrabold text-slate-950 shadow-md transition-colors hover:bg-amber-300"
+              >
+                <Download className="h-4 w-4 shrink-0" />
+                <span>Download Installer (.zip)</span>
+              </a>
+              <span className="text-center text-xs text-slate-300">
+                Clean white-label archive · Zero demo data
+              </span>
+            </div>
+          </div>
         </div>
       </section>
     </div>

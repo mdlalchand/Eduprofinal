@@ -10,6 +10,7 @@ use App\Models\CommunityPost;
 use App\Models\Coupon;
 use App\Models\Course;
 use App\Models\Enrollment;
+use App\Models\FinancialRecord;
 use App\Models\Lesson;
 use App\Models\Review;
 use App\Models\User;
@@ -118,6 +119,7 @@ class PublicController extends Controller
             'branch_id' => $hasBranches ? 'required|exists:branches,id' : 'nullable|exists:branches,id',
             'payment_method' => 'required|string|max:80',
             'coupon_code' => 'nullable|string|max:40',
+            'trx_id' => 'nullable|string|max:80',
         ]);
 
         $gatewaysRaw = DB::table('settings')->where('key', 'payment_gateways')->value('value');
@@ -138,12 +140,16 @@ class PublicController extends Controller
             }
         }
 
-        $status = in_array($selectedGateway['provider_type'] ?? 'online', ['cash', 'manual'], true) ? 'pending' : 'approved';
-        Enrollment::create([
+        // Only zero-cost enrollments approve immediately; paid enrollments stay pending until verified gateway webhook or admin/branch approval.
+        $status = $finalPrice === 0 ? 'approved' : 'pending';
+        $invoiceNo = 'INV-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
+        $enrollment = Enrollment::create([
             'user_id' => $request->user()->id,
             'course_id' => $course->id,
             'branch_id' => $data['branch_id'] ?? null,
             'payment_method' => $selectedGateway['name'],
+            'trx_id' => !empty($data['trx_id']) ? strtoupper(trim((string) $data['trx_id'])) : null,
+            'invoice_no' => $invoiceNo,
             'amount_paid' => $finalPrice,
             'coupon_used' => $couponCode,
             'status' => $status,
@@ -154,7 +160,66 @@ class PublicController extends Controller
             $course->increment('enrolled_count');
         }
 
-        return back()->with('status', $status === 'approved' ? 'Enrolled successfully!' : 'Pending Branch Manager verification.');
+        return back()->with(
+            'status',
+            $status === 'approved'
+                ? 'Enrolled successfully!'
+                : "Enrollment #{$enrollment->id} submitted ({$invoiceNo}). Awaiting payment gateway webhook or branch verification."
+        );
+    }
+
+    public function paymentWebhook(Request $request, string $gateway)
+    {
+        $rawBody = $request->getContent();
+        $providedSig = (string) ($request->header('X-Webhook-Signature') ?? $request->input('signature', ''));
+        $secret = (string) (env('PAYMENT_WEBHOOK_SECRET') ?: config('app.key'));
+        $expectedSig = hash_hmac('sha256', $rawBody !== '' ? $rawBody : json_encode($request->only(['enrollment_id', 'trx_id', 'amount', 'status'])), $secret);
+
+        if ($providedSig === '' || !hash_equals($expectedSig, trim($providedSig))) {
+            return response()->json(['error' => 'Invalid payment webhook signature.'], 401);
+        }
+
+        $data = $request->validate([
+            'enrollment_id' => 'required|integer|exists:enrollments,id',
+            'trx_id' => 'required|string|max:80',
+            'amount' => 'required|integer|min:0',
+            'status' => 'required|string|in:SUCCESS,VALID,COMPLETED',
+        ]);
+
+        $enrollment = Enrollment::with(['course', 'user'])->findOrFail($data['enrollment_id']);
+        if ((int) $data['amount'] !== (int) $enrollment->amount_paid) {
+            return response()->json(['error' => 'Webhook amount mismatch.'], 400);
+        }
+
+        if ($enrollment->status === 'approved') {
+            return response()->json(['ok' => true, 'deduplicated' => true, 'enrollment_id' => $enrollment->id]);
+        }
+
+        $cleanTrx = strtoupper(trim($data['trx_id']));
+        if (Enrollment::where('trx_id', $cleanTrx)->where('id', '!=', $enrollment->id)->exists()) {
+            return response()->json(['error' => 'Duplicate Transaction ID rejected.'], 409);
+        }
+
+        DB::transaction(function () use ($enrollment, $cleanTrx, $gateway) {
+            $enrollment->update([
+                'status' => 'approved',
+                'trx_id' => $cleanTrx,
+            ]);
+            if ($enrollment->course) {
+                $enrollment->course->increment('enrolled_count');
+            }
+            FinancialRecord::create([
+                'type' => 'income',
+                'category' => 'Verified Gateway Payment',
+                'title' => "{$gateway} ({$enrollment->invoice_no}) — {$enrollment->user?->name}",
+                'amount' => $enrollment->amount_paid,
+                'branch_id' => $enrollment->branch_id,
+                'entry_date' => now()->toDateString(),
+                'recorded_by' => "{$gateway} Webhook",
+            ]);
+        });
+
+        return response()->json(['ok' => true, 'enrollment_id' => $enrollment->id, 'status' => 'approved']);
     }
 
     public function instructors()

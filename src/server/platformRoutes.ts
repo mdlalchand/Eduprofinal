@@ -25,15 +25,19 @@ import {
   isCourseStatusLive,
   validateEnrollmentRequest,
 } from '../lib/courseEnterprise';
+import { pseudonymizeLeaderboardId } from './publicRedaction';
+import { resolveSessionSecret } from './security';
 import type {
   ApiPlugin,
   AttendanceRecord,
   CategoryItem,
+  CenterResultRecord,
   CommunityPost,
   Coupon,
   Ebook,
   Enrollment,
   Exam,
+  ExamQuestion,
   Instructor,
   Order,
   PaymentGatewayConfig,
@@ -130,9 +134,10 @@ export function createPlatformRouter(
     const categories = db.categories.filter((c) => c.active);
     const customPages = (db.settings.customPages ?? []).filter((pg) => pg.published);
 
+    const publicSecret = resolveSessionSecret();
     const leaderboard = Object.values(db.rewardsByUser)
       .map((profile) => ({
-        userId: profile.userId,
+        userId: pseudonymizeLeaderboardId(profile.userId, publicSecret),
         displayName: maskLeaderboardName(profile.studentName, profile.showOnLeaderboard !== false),
         isMasked: profile.showOnLeaderboard === false,
         branchName: db.branches.find((b) => b.id === profile.branchId)?.name ?? 'Online Campus',
@@ -871,6 +876,43 @@ export function createPlatformRouter(
     res.status(201).json({ exam });
   });
 
+  router.put('/api/portal/exams/:id', requireAuth, requireRole(['admin', 'teacher']), (req: AuthedRequest, res) => {
+    const db = getDb();
+    const exam = db.exams.find((ex) => ex.id === req.params.id);
+    if (!exam) return void res.status(404).json({ error: 'Exam not found.' });
+
+    const body = req.body ?? {};
+    if (typeof body.title === 'string' && body.title.trim()) exam.title = body.title.trim();
+    if (typeof body.category === 'string' && body.category.trim()) exam.category = body.category.trim();
+    if (body.courseId !== undefined) exam.courseId = body.courseId ? String(body.courseId) : null;
+    if (body.durationMinutes !== undefined) {
+      exam.durationMinutes = Math.max(5, Number(body.durationMinutes) || exam.durationMinutes);
+    }
+    if (body.passPercentage !== undefined) {
+      exam.passPercentage = Math.max(10, Math.min(100, Number(body.passPercentage) || exam.passPercentage));
+    }
+    if (body.negativeMarkPerWrong !== undefined) {
+      exam.negativeMarkPerWrong = Math.max(0, Number(body.negativeMarkPerWrong) || 0);
+    }
+    if (body.visibility === 'public' || body.visibility === 'course') {
+      exam.visibility = body.visibility;
+    }
+    if (Array.isArray(body.questions) && body.questions.length > 0) {
+      exam.questions = body.questions.map((q: Record<string, unknown>, idx: number): ExamQuestion => ({
+        id: String(q.id || `q-${Date.now()}-${idx}`),
+        prompt: String(q.prompt ?? '').trim() || `Question ${idx + 1}`,
+        options: Array.isArray(q.options) && q.options.length >= 2 ? q.options.map((o) => String(o)) : ['Option A', 'Option B', 'Option C', 'Option D'],
+        correctIndex: Math.min(3, Math.max(0, Number(q.correctIndex) || 0)),
+        explanation: String(q.explanation ?? 'Verified by Academic Faculty.').trim(),
+        marks: Math.max(1, Number(q.marks) || 2),
+      }));
+    }
+
+    recordAuditLog(db, req.authUser!, 'EXAM_UPDATE', exam.title, `${exam.questions.length} MCQs · ${exam.durationMinutes} min`);
+    saveDb(db);
+    res.json({ exam });
+  });
+
   router.delete('/api/portal/exams/:id', requireAuth, requireRole(['admin', 'teacher']), (req: AuthedRequest, res) => {
     const db = getDb();
     const idx = db.exams.findIndex((ex) => ex.id === req.params.id);
@@ -1088,7 +1130,18 @@ export function createPlatformRouter(
   });
 
   router.post('/api/portal/instructors', requireAuth, requireRole(['admin']), (req: AuthedRequest, res) => {
-    const { name, subject, roleTitle, education, panel, branchId, bio, avatar } = req.body ?? {};
+    const {
+      name,
+      subject,
+      roleTitle,
+      education,
+      panel,
+      branchId,
+      bio,
+      avatar,
+      youtubeUrl,
+      facebookUrl,
+    } = req.body ?? {};
     if (!String(name ?? '').trim()) {
       res.status(400).json({ error: 'Instructor name is required.' });
       return;
@@ -1104,6 +1157,8 @@ export function createPlatformRouter(
       branchId: String(branchId || 'br-mirpur'),
       bio: String(bio || 'Experienced board & admission English mentor.').trim(),
       avatar: sanitizeSafeUrl(String(avatar ?? ''), '/src/assets/images/instructor_portrait_lead_1795411661581.jpg'),
+      youtubeUrl: youtubeUrl ? sanitizeSafeUrl(String(youtubeUrl), 'https://www.youtube.com') : undefined,
+      facebookUrl: facebookUrl ? sanitizeSafeUrl(String(facebookUrl), 'https://www.facebook.com') : undefined,
     };
     db.instructors.unshift(instructor);
     recordAuditLog(db, req.authUser!, 'INSTRUCTOR_CREATE', instructor.name, instructor.subject);
@@ -1126,6 +1181,12 @@ export function createPlatformRouter(
     if (body.avatar !== undefined) {
       instructor.avatar = sanitizeSafeUrl(String(body.avatar ?? ''), instructor.avatar);
     }
+    if (body.youtubeUrl !== undefined) {
+      instructor.youtubeUrl = body.youtubeUrl ? sanitizeSafeUrl(String(body.youtubeUrl), '') : '';
+    }
+    if (body.facebookUrl !== undefined) {
+      instructor.facebookUrl = body.facebookUrl ? sanitizeSafeUrl(String(body.facebookUrl), '') : '';
+    }
     recordAuditLog(db, req.authUser!, 'INSTRUCTOR_UPDATE', instructor.name, instructor.subject);
     saveDb(db);
     res.json({ instructor });
@@ -1147,6 +1208,89 @@ export function createPlatformRouter(
     });
     saveDb(db);
     res.json({ deletedId: removed.id });
+  });
+
+  // ---------------- STUDENT BOARD & CENTER RESULT RECORDS CRUD ----------------
+
+  router.get('/api/portal/results', requireAuth, requireRole(['admin', 'teacher']), (_req, res) => {
+    const db = getDb();
+    res.json({ results: db.results });
+  });
+
+  router.post('/api/portal/results', requireAuth, requireRole(['admin', 'teacher']), (req: AuthedRequest, res) => {
+    const b = req.body ?? {};
+    const rollNumber = String(b.rollNumber ?? '').trim().toUpperCase();
+    const studentName = String(b.studentName ?? '').trim();
+    const examName = String(b.examName ?? '').trim();
+    if (!rollNumber || !studentName || !examName) {
+      res.status(400).json({ error: 'Roll Number, Student Name, and Exam Name are required.' });
+      return;
+    }
+    const db = getDb();
+    const mcqScore = Math.max(0, Number(b.mcqScore) || 0);
+    const writtenScore = Math.max(0, Number(b.writtenScore) || 0);
+    const totalScore = b.totalScore !== undefined ? Math.max(0, Number(b.totalScore) || 0) : mcqScore + writtenScore;
+    const maxScore = Math.max(1, Number(b.maxScore) || 100);
+    const normalizedStatus: 'Passed' | 'Distinction' =
+      String(b.status ?? '').toLowerCase().includes('distinction') ? 'Distinction' : 'Passed';
+    const record: CenterResultRecord = {
+      id: `res-${Date.now()}`,
+      rollNumber,
+      studentName,
+      batchName: String(b.batchName ?? 'HSC 27 Batch').trim(),
+      branchName: String(b.branchName ?? 'Main Campus').trim(),
+      examName,
+      mcqScore,
+      writtenScore,
+      totalScore,
+      maxScore,
+      gpaOrGrade: String(b.gpaOrGrade ?? 'A+').trim(),
+      meritPosition: Math.max(1, Number(b.meritPosition) || 1),
+      status: normalizedStatus,
+      publishedAt: String(b.publishedAt ?? new Date().toISOString().slice(0, 10)),
+    };
+    db.results.unshift(record);
+    recordAuditLog(db, req.authUser!, 'RESULT_CREATE', `${record.rollNumber} · ${record.studentName}`, `${record.examName} (${record.totalScore}/${record.maxScore})`);
+    saveDb(db);
+    res.status(201).json({ result: record });
+  });
+
+  router.put('/api/portal/results/:id', requireAuth, requireRole(['admin', 'teacher']), (req: AuthedRequest, res) => {
+    const db = getDb();
+    const key = decodeURIComponent(req.params.id);
+    const record = db.results.find((r) => r.id === key || r.rollNumber === key);
+    if (!record) return void res.status(404).json({ error: 'Result record not found.' });
+    if (!record.id) record.id = key;
+    const b = req.body ?? {};
+    if (typeof b.rollNumber === 'string' && b.rollNumber.trim()) record.rollNumber = b.rollNumber.trim().toUpperCase();
+    if (typeof b.studentName === 'string' && b.studentName.trim()) record.studentName = b.studentName.trim();
+    if (typeof b.batchName === 'string' && b.batchName.trim()) record.batchName = b.batchName.trim();
+    if (typeof b.branchName === 'string' && b.branchName.trim()) record.branchName = b.branchName.trim();
+    if (typeof b.examName === 'string' && b.examName.trim()) record.examName = b.examName.trim();
+    if (b.mcqScore !== undefined) record.mcqScore = Math.max(0, Number(b.mcqScore) || 0);
+    if (b.writtenScore !== undefined) record.writtenScore = Math.max(0, Number(b.writtenScore) || 0);
+    if (b.totalScore !== undefined) record.totalScore = Math.max(0, Number(b.totalScore) || 0);
+    if (b.maxScore !== undefined) record.maxScore = Math.max(1, Number(b.maxScore) || 100);
+    if (typeof b.gpaOrGrade === 'string' && b.gpaOrGrade.trim()) record.gpaOrGrade = b.gpaOrGrade.trim();
+    if (b.meritPosition !== undefined) record.meritPosition = Math.max(1, Number(b.meritPosition) || 1);
+    if (typeof b.status === 'string' && b.status.trim()) {
+      record.status = b.status.toLowerCase().includes('distinction') ? 'Distinction' : 'Passed';
+    }
+    if (typeof b.publishedAt === 'string' && b.publishedAt.trim()) record.publishedAt = b.publishedAt.trim();
+    recordAuditLog(db, req.authUser!, 'RESULT_UPDATE', `${record.rollNumber} · ${record.studentName}`, record.examName);
+    saveDb(db);
+    res.json({ result: record });
+  });
+
+  router.delete('/api/portal/results/:id', requireAuth, requireRole(['admin']), (req: AuthedRequest, res) => {
+    const db = getDb();
+    const key = decodeURIComponent(req.params.id);
+    const idx = db.results.findIndex((r) => r.id === key || r.rollNumber === key);
+    if (idx === -1) return void res.status(404).json({ error: 'Result record not found.' });
+    const [removed] = db.results.splice(idx, 1);
+    recordAuditLog(db, req.authUser!, 'RESULT_DELETE', `${removed.rollNumber} · ${removed.studentName}`, removed.examName);
+    saveDb(db);
+    res.json({ deletedId: removed.id || removed.rollNumber });
   });
 
   router.post('/api/portal/categories', requireAuth, requireRole(['admin']), (req: AuthedRequest, res) => {
@@ -1382,6 +1526,27 @@ export function createPlatformRouter(
     if (Array.isArray(b.customPages)) {
       db.settings.customPages = b.customPages;
     }
+    if (b.boardResultConfig && typeof b.boardResultConfig === 'object') {
+      const br = b.boardResultConfig;
+      db.settings.boardResultConfig = {
+        title: String(br.title ?? 'Education Board Result 2026').trim(),
+        subtitle: String(
+          br.subtitle ?? 'Check your official board examination results from the Education Board'
+        ).trim(),
+        portalHeading: String(br.portalHeading ?? 'Official Result Portals').trim(),
+        portalDescription: String(
+          br.portalDescription ??
+            'Access the official Education Board websites to check your board examination results instantly. Get your results with roll number, registration number, or name.'
+        ).trim(),
+        eboardUrl: sanitizeSafeUrl(String(br.eboardUrl ?? 'https://eboardresults.com/'), 'https://eboardresults.com/'),
+        eboardLabel: String(br.eboardLabel ?? 'Eboard Results').trim(),
+        educationBoardUrl: sanitizeSafeUrl(
+          String(br.educationBoardUrl ?? 'http://www.educationboardresults.gov.bd/'),
+          'http://www.educationboardresults.gov.bd/'
+        ),
+        educationBoardLabel: String(br.educationBoardLabel ?? 'Education Board Portal').trim(),
+      };
+    }
 
     recordAuditLog(db, req.authUser!, 'BRANDING_FOOTER_UPDATE', db.settings.brandName, 'Menus, Logo, Theme & Footer saved');
     saveDb(db);
@@ -1390,34 +1555,37 @@ export function createPlatformRouter(
 
   // ---------------- ATTENDANCE, PAYROLL & FINANCE ----------------
 
+  const getScopedAttendanceForActor = (
+    db: ReturnType<typeof getDb>,
+    actor: StoredUser
+  ) => {
+    if (actor.role !== 'teacher') return db.attendance;
+    const assignedCourseIds = getTeacherAssignedCourseIds(
+      actor,
+      db.courses,
+      db.instructors,
+      db.batches
+    );
+    const assignedBatchIds = new Set(
+      db.batches.filter((b) => assignedCourseIds.has(b.courseId)).map((b) => b.id)
+    );
+    const enrolledStudentIds = new Set(
+      db.enrollments
+        .filter((e) => e.status === 'approved' && assignedCourseIds.has(e.courseId))
+        .map((e) => e.userId)
+    );
+    return db.attendance.filter(
+      (a) =>
+        a.targetId === actor.id ||
+        (a.batchId && assignedBatchIds.has(a.batchId)) ||
+        enrolledStudentIds.has(a.targetId)
+    );
+  };
+
   router.get('/api/portal/attendance', requireAuth, requireRole(['admin', 'teacher']), (req: AuthedRequest, res) => {
     const db = getDb();
     const actor = req.authUser!;
-    if (actor.role === 'teacher') {
-      const assignedCourseIds = getTeacherAssignedCourseIds(
-        actor,
-        db.courses,
-        db.instructors,
-        db.batches
-      );
-      const assignedBatchIds = new Set(
-        db.batches.filter((b) => assignedCourseIds.has(b.courseId)).map((b) => b.id)
-      );
-      const enrolledStudentIds = new Set(
-        db.enrollments
-          .filter((e) => e.status === 'approved' && assignedCourseIds.has(e.courseId))
-          .map((e) => e.userId)
-      );
-      const scoped = db.attendance.filter(
-        (a) =>
-          a.targetId === actor.id ||
-          (a.batchId && assignedBatchIds.has(a.batchId)) ||
-          enrolledStudentIds.has(a.targetId)
-      );
-      res.json({ attendance: scoped });
-      return;
-    }
-    res.json({ attendance: db.attendance });
+    res.json({ attendance: getScopedAttendanceForActor(db, actor) });
   });
 
   router.post('/api/portal/attendance', requireAuth, requireRole(['admin', 'teacher']), (req: AuthedRequest, res) => {
@@ -1482,7 +1650,7 @@ export function createPlatformRouter(
         ];
       }
       saveDb(db);
-      res.json({ record: existing, attendance: db.attendance });
+      res.json({ record: existing, attendance: getScopedAttendanceForActor(db, actor) });
       return;
     }
 
@@ -1501,7 +1669,7 @@ export function createPlatformRouter(
     };
     db.attendance.unshift(record);
     saveDb(db);
-    res.status(201).json({ record, attendance: db.attendance });
+    res.status(201).json({ record, attendance: getScopedAttendanceForActor(db, actor) });
   });
 
   router.post('/api/portal/payroll', requireAuth, requireRole(['admin']), (req: AuthedRequest, res) => {

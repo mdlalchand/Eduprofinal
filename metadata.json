@@ -1,6 +1,6 @@
 {
-  "name": "Aloms English Center — EDUPro",
-  "description": "Aloms English Center (EDUPro) — Comprehensive online and branch-based English learning platform with courses, live MCQ exams, e-books, study materials, result lookup, and a unified multi-role LMS dashboard.",
+  "name": "Aloms English Center LMS",
+  "description": "Multi-branch English learning management system with student, guardian, teacher, and admin portals.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

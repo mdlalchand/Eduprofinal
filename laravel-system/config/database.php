@@ -32,7 +32,10 @@ return [
             'engine' => null,
             'options' => extension_loaded('pdo_mysql') ? array_filter([
                 PDO::MYSQL_ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
-            ]) : [],
+                PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT => env('MYSQL_ATTR_SSL_CA')
+                    ? filter_var(env('MYSQL_ATTR_SSL_VERIFY_SERVER_CERT', true), FILTER_VALIDATE_BOOLEAN)
+                    : null,
+            ], static fn ($v) => $v !== null && $v !== '') : [],
         ],
 
         'pgsql' => [
@@ -47,7 +50,8 @@ return [
             'prefix' => '',
             'prefix_indexes' => true,
             'search_path' => 'public',
-            'sslmode' => env('DB_SSLMODE', 'prefer'),
+            'sslmode' => env('DB_SSLMODE', env('APP_ENV') === 'production' ? 'require' : 'prefer'),
+            'sslrootcert' => env('DB_SSLROOTCERT'),
         ],
     ],
 

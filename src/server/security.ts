@@ -8,24 +8,30 @@ export const SESSION_COOKIE_NAME = 'edupro_session';
 
 let resolvedSessionSecret: string | null = null;
 
+export function resetResolvedSessionSecretForTests(): void {
+  resolvedSessionSecret = null;
+}
+
 export function resolveSessionSecret(): string {
   if (resolvedSessionSecret) return resolvedSessionSecret;
   const envSecret = (process.env.SESSION_SECRET ?? '').trim();
   const isProd = process.env.NODE_ENV === 'production';
 
-  if (isProd) {
-    if (envSecret.length >= 32) {
-      resolvedSessionSecret = envSecret;
-      return resolvedSessionSecret;
-    }
-    console.warn(
-      '[SECURITY] SESSION_SECRET not set (>=32 chars); falling back to persistent local secret.'
+  if (envSecret.length >= 32) {
+    resolvedSessionSecret = envSecret;
+    return resolvedSessionSecret;
+  }
+
+  if (isProd && process.env.ALLOW_LOCAL_SESSION_SECRET_FALLBACK !== 'true') {
+    throw new Error(
+      '[SECURITY] SESSION_SECRET must be configured with at least 32 characters in production.'
     );
   }
 
-  if (envSecret.length >= 16) {
-    resolvedSessionSecret = envSecret;
-    return resolvedSessionSecret;
+  if (envSecret.length > 0) {
+    console.warn(
+      '[SECURITY] Provided SESSION_SECRET is shorter than 32 characters; ignoring weak secret and generating a 64-char local secret.'
+    );
   }
 
   // Dev/preview persistent local secret so sessions survive dev server restarts cleanly

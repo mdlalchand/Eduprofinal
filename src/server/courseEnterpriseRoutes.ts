@@ -28,6 +28,8 @@ import type {
 } from '../types';
 import { getDb, recordAuditLog, saveDb, type StoredUser } from './store';
 import { assertBranchOperationalForTransactions } from './paymentService';
+import { consumePublicRateLimit, sanitizePublicCertificate } from './publicRedaction';
+import { getClientIp } from './security';
 
 interface AuthedRequest extends Request {
   authUser?: StoredUser;
@@ -78,8 +80,8 @@ export function createCourseEnterpriseRouter(
       });
 
       const recentActivities = db.auditLogs
-        .filter((log) =>
-          [
+        .filter((log) => {
+          const isCourseAction = [
             'COURSE_CREATE',
             'COURSE_UPDATE',
             'COURSE_STATUS',
@@ -93,8 +95,14 @@ export function createCourseEnterpriseRouter(
             'ENROLLMENT_CANCEL_REFUND',
             'CERTIFICATE_ISSUE',
             'CURRICULUM_UPDATE',
-          ].includes(log.action)
-        )
+          ].includes(log.action);
+          if (!isCourseAction) return false;
+          if (actor.role !== 'teacher') return true;
+          return (
+            log.actorId === actor.id ||
+            scopedCourses.some((c) => log.target.includes(c.title) || log.details.includes(c.id))
+          );
+        })
         .slice(0, 20);
 
       res.json({
@@ -1270,6 +1278,18 @@ export function createCourseEnterpriseRouter(
   );
 
   router.get('/api/public/certificates/verify/:certNo', (req, res) => {
+    const rateCheck = consumePublicRateLimit(
+      `public-cert:${getClientIp(req)}`,
+      30,
+      5 * 60 * 1000
+    );
+    if (!rateCheck.allowed) {
+      res.setHeader('Retry-After', String(rateCheck.retryAfterSeconds));
+      res.status(429).json({
+        error: `Too many certificate verification checks. Please try again in ${rateCheck.retryAfterSeconds}s.`,
+      });
+      return;
+    }
     const rawNo = String(req.params.certNo ?? '').trim().toUpperCase();
     if (!rawNo) {
       res.status(400).json({ error: 'Certificate number is required.' });
@@ -1285,7 +1305,7 @@ export function createCourseEnterpriseRouter(
     }
     res.json({
       valid: !certificate.revoked,
-      certificate,
+      certificate: sanitizePublicCertificate(certificate),
     });
   });
 

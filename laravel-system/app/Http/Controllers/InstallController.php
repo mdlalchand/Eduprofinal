@@ -56,6 +56,7 @@ class InstallController extends Controller
             'db_database' => 'required|string|max:180',
             'db_username' => 'nullable|string|max:120',
             'db_password' => 'nullable|string|max:200',
+            'db_sslmode' => 'nullable|in:disable,prefer,require,verify-ca,verify-full',
             'admin_name' => 'required|string|max:120',
             'admin_email' => 'required|email|max:140',
             'admin_password' => 'required|string|min:8',
@@ -63,6 +64,8 @@ class InstallController extends Controller
 
         $driver = $data['db_connection'];
         $dbDatabaseValue = trim($data['db_database']);
+        $sslMode = (string) ($data['db_sslmode'] ?? 'prefer');
+        $isHttps = str_starts_with(strtolower(trim($data['app_url'])), 'https://');
 
         if ($driver === 'sqlite') {
             $sqlitePath = str_starts_with($dbDatabaseValue, '/')
@@ -92,7 +95,7 @@ class InstallController extends Controller
 
             try {
                 $dsn = $driver === 'pgsql'
-                    ? "pgsql:host={$host};port={$port};dbname={$dbDatabaseValue}"
+                    ? "pgsql:host={$host};port={$port};dbname={$dbDatabaseValue};sslmode={$sslMode}"
                     : "mysql:host={$host};port={$port};dbname={$dbDatabaseValue};charset=utf8mb4";
                 new PDO($dsn, $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
             } catch (\Throwable $e) {
@@ -118,9 +121,14 @@ class InstallController extends Controller
             $envLines[] = 'DB_DATABASE="' . addslashes($dbDatabaseValue) . '"';
             $envLines[] = 'DB_USERNAME="' . addslashes((string) ($data['db_username'] ?? 'root')) . '"';
             $envLines[] = 'DB_PASSWORD="' . addslashes((string) ($data['db_password'] ?? '')) . '"';
+            $envLines[] = 'DB_SSLMODE=' . $sslMode;
         }
 
         $envLines[] = 'SESSION_DRIVER=database';
+        $envLines[] = 'SESSION_ENCRYPT=true';
+        $envLines[] = 'SESSION_HTTP_ONLY=true';
+        $envLines[] = 'SESSION_SAME_SITE=lax';
+        $envLines[] = 'SESSION_SECURE_COOKIE=' . ($isHttps ? 'true' : 'false');
         $envLines[] = 'CACHE_STORE=database';
         $envLines[] = 'QUEUE_CONNECTION=database';
 
@@ -131,6 +139,8 @@ class InstallController extends Controller
             'app.key' => $appKey,
             'app.url' => rtrim($data['app_url'], '/'),
             'database.default' => $driver,
+            'session.encrypt' => true,
+            'session.secure' => $isHttps,
         ]);
 
         if ($driver === 'sqlite') {
@@ -142,6 +152,7 @@ class InstallController extends Controller
                 "database.connections.{$driver}.database" => $dbDatabaseValue,
                 "database.connections.{$driver}.username" => (string) ($data['db_username'] ?? 'root'),
                 "database.connections.{$driver}.password" => (string) ($data['db_password'] ?? ''),
+                "database.connections.pgsql.sslmode" => $sslMode,
             ]);
         }
         DB::purge($driver);

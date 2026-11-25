@@ -24,13 +24,5 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "exclude": [
-    "dist",
-    "laravel-system",
-    "src/components/AcademicOpsPanels.tsx",
-    "src/components/AdminDashboardStudio.tsx",
-    "src/components/EnterpriseSaasPanel.tsx",
-    "src/server/enterpriseRoutes.ts",
-    "src/server/enterpriseSeed.ts"
-  ]
+  "exclude": ["dist"]
 }

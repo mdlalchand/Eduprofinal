@@ -796,24 +796,27 @@ export function createBatchEnterpriseRouter(
         announcements,
         activityLogs,
         notifications,
-        eligibleStudents: db.users
-          .filter((u) => u.role === 'student' && u.status !== 'suspended')
-          .sort((a, b) => {
-            const aEnr = db.enrollments.some(
-              (e) =>
-                e.userId === a.id &&
-                e.courseId === batch.courseId &&
-                (e.status === 'approved' || e.status === 'pending')
-            );
-            const bEnr = db.enrollments.some(
-              (e) =>
-                e.userId === b.id &&
-                e.courseId === batch.courseId &&
-                (e.status === 'approved' || e.status === 'pending')
-            );
-            return Number(aEnr) - Number(bEnr);
-          })
-          .map(({ passwordHash: _p, ...u }) => u),
+        eligibleStudents:
+          actor.role === 'admin'
+            ? db.users
+                .filter((u) => u.role === 'student' && u.status !== 'suspended')
+                .sort((a, b) => {
+                  const aEnr = db.enrollments.some(
+                    (e) =>
+                      e.userId === a.id &&
+                      e.courseId === batch.courseId &&
+                      (e.status === 'approved' || e.status === 'pending')
+                  );
+                  const bEnr = db.enrollments.some(
+                    (e) =>
+                      e.userId === b.id &&
+                      e.courseId === batch.courseId &&
+                      (e.status === 'approved' || e.status === 'pending')
+                  );
+                  return Number(aEnr) - Number(bEnr);
+                })
+                .map(({ passwordHash: _p, ...u }) => u)
+            : [],
       });
     }
   );
@@ -1567,9 +1570,20 @@ export function createBatchEnterpriseRouter(
         return void res.status(400).json({ error: 'No attendance entries provided.' });
       }
 
+      const enrolledBatchStudentIds = new Set(
+        db.enrollments
+          .filter(
+            (e) =>
+              e.status === 'approved' &&
+              (e.batchId === batch.id || (!e.batchId && e.courseId === batch.courseId))
+          )
+          .map((e) => e.userId)
+      );
+
       const updatedRecords: AttendanceRecord[] = [];
       for (const entry of entries) {
-        const student = db.users.find((u) => u.id === entry.studentId);
+        if (!enrolledBatchStudentIds.has(entry.studentId)) continue;
+        const student = db.users.find((u) => u.id === entry.studentId && u.role === 'student');
         if (!student) continue;
         const safeStatus = (
           ['present', 'absent', 'late', 'leave', 'excused'].includes(entry.status)

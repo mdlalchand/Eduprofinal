@@ -78,6 +78,16 @@ import {
   verifyPassword,
   type StoredUser,
 } from './src/server/store';
+import {
+  consumePublicRateLimit,
+  deriveStudentGuardianLinkCode,
+  pseudonymizeLeaderboardId,
+  redactLessonForViewer,
+  sanitizePublicEbook,
+  sanitizePublicExamAttempt,
+  sanitizePublicInstructor,
+  verifyGuardianLinkCredential,
+} from './src/server/publicRedaction';
 import type {
   Branch,
   CertificateCriteria,
@@ -214,7 +224,7 @@ async function startServer() {
     await initPostgresIfConfigured();
   } catch (err) {
     console.warn(
-      '[AI Studio] PostgreSQL unavailable — falling back to local SQLite store:',
+      '[LMS] PostgreSQL unavailable — falling back to local SQLite store:',
       err instanceof Error ? err.message : err
     );
   }
@@ -258,9 +268,10 @@ async function startServer() {
     const visibleReviews = db.reviews.filter(
       (r) => r.status !== 'hidden' && r.status !== 'pending'
     );
+    const publicSecret = resolveSessionSecret();
     const leaderboardSummary = Object.values(db.rewardsByUser)
       .map((profile) => ({
-        userId: profile.userId,
+        userId: pseudonymizeLeaderboardId(profile.userId, publicSecret),
         displayName: maskLeaderboardName(profile.studentName, profile.showOnLeaderboard !== false),
         isMasked: profile.showOnLeaderboard === false,
         xp: profile.xp,
@@ -282,9 +293,9 @@ async function startServer() {
       courses: publicCourses,
       batches: db.batches.map((b) => redactBatchForViewer(b, null, [], db.instructors)),
       modules: db.modules.filter((m) => (m.status ?? 'published') !== 'draft'),
-      instructors: db.instructors,
+      instructors: db.instructors.map(sanitizePublicInstructor),
       products: db.products,
-      ebooks: db.ebooks.filter((e) => e.status !== 'draft'),
+      ebooks: db.ebooks.filter((e) => e.status !== 'draft').map(sanitizePublicEbook),
       reviews: visibleReviews,
       categories: db.categories.filter((c) => c.active),
       leaderboardSummary,
@@ -299,7 +310,9 @@ async function startServer() {
       res.status(404).json({ error: 'Course not found' });
       return;
     }
-    const instructors = db.instructors.filter((i) => course.instructorIds.includes(i.id));
+    const instructors = db.instructors
+      .filter((i) => course.instructorIds.includes(i.id))
+      .map(sanitizePublicInstructor);
     const batches = db.batches
       .filter((b) => b.courseId === course.id)
       .map((b) => redactBatchForViewer(b, null, [], db.instructors));
@@ -312,17 +325,7 @@ async function startServer() {
     const lessons = db.lessons
       .filter((l) => l.courseId === course.id && (l.status ?? 'published') !== 'draft')
       .sort((a, b) => a.orderIndex - b.orderIndex)
-      .map((l) => ({
-        ...l,
-        videoUrl: l.isFreePreview ? l.videoUrl : '',
-        audioUrl: l.isFreePreview ? l.audioUrl : undefined,
-        textContent: l.isFreePreview ? l.textContent : undefined,
-        liveJoinUrl: l.isFreePreview ? l.liveJoinUrl : '',
-        lectureSheetUrl: l.isFreePreview ? l.lectureSheetUrl : '',
-        externalUrl: l.isFreePreview ? l.externalUrl : undefined,
-        resources: l.isFreePreview ? l.resources : [],
-        sheetSummary: l.isFreePreview ? l.sheetSummary : 'Available after enrollment',
-      }));
+      .map((l) => redactLessonForViewer(l, false));
     const branches = db.branches.filter(
       (b) => course.branchIds.includes(b.id) && b.status === 'active'
     );
@@ -395,6 +398,14 @@ async function startServer() {
   });
 
   app.get('/api/public/results/lookup', (req, res) => {
+    const rateCheck = consumePublicRateLimit(`public-lookup:${getClientIp(req)}`, 30, 5 * 60 * 1000);
+    if (!rateCheck.allowed) {
+      res.setHeader('Retry-After', String(rateCheck.retryAfterSeconds));
+      res.status(429).json({
+        error: `Too many result lookups. Please try again in ${rateCheck.retryAfterSeconds}s.`,
+      });
+      return;
+    }
     const roll = String(req.query.roll ?? '').trim().toUpperCase();
     if (!roll) {
       res.status(400).json({ error: 'Please enter a valid Student Roll Number' });
@@ -402,7 +413,9 @@ async function startServer() {
     }
     const db = getDb();
     const record = db.results.find((r) => r.rollNumber.toUpperCase() === roll);
-    const liveAttempts = db.examAttempts.filter((a) => a.rollNumber.toUpperCase() === roll);
+    const liveAttempts = db.examAttempts
+      .filter((a) => a.rollNumber.toUpperCase() === roll)
+      .map(sanitizePublicExamAttempt);
     if (!record && liveAttempts.length === 0) {
       res.status(404).json({ error: `No result record found for Roll ${roll}` });
       return;
@@ -544,7 +557,11 @@ async function startServer() {
     const password = String(req.body?.password ?? '');
     const roleInput = String(req.body?.role ?? 'student');
     const requestedBranchId = String(req.body?.branchId ?? '').trim();
-    const studentRollToLink = String(req.body?.studentRollToLink ?? '').trim().toUpperCase();
+    const studentRollToLink = String(
+      req.body?.studentRollToLink ?? req.body?.studentRollLink ?? ''
+    )
+      .trim()
+      .toUpperCase();
 
     if (!name || !email || !email.includes('@') || !phone) {
       res.status(400).json({ error: 'Name, valid email, and phone number are required.' });
@@ -582,12 +599,38 @@ async function startServer() {
 
     let guardianLinkedStudentIds: string[] | undefined;
     if (role === 'guardian' && studentRollToLink) {
+      const verificationInput = String(
+        req.body?.studentVerification ??
+          req.body?.verificationCode ??
+          req.body?.verification ??
+          req.body?.studentPhone ??
+          ''
+      ).trim();
       const targetStudent = db.users.find(
         (u) => u.role === 'student' && (u.rollNumber ?? '').toUpperCase() === studentRollToLink
       );
-      if (targetStudent) {
-        guardianLinkedStudentIds = [targetStudent.id];
+      const admissionPhones = targetStudent
+        ? db.studentAdmissions
+            .filter((a) => a.studentUserId === targetStudent.id && a.guardianPhone)
+            .map((a) => a.guardianPhone ?? '')
+        : [];
+      if (
+        !targetStudent ||
+        !verifyGuardianLinkCredential({
+          actorRole: 'guardian',
+          verificationInput,
+          student: targetStudent,
+          admissionGuardianPhones: admissionPhones,
+          secret: resolveSessionSecret(),
+        })
+      ) {
+        res.status(403).json({
+          error:
+            'Student verification failed. Enter the student’s matching registered phone number or guardian linking code (or leave Roll Number blank to link later).',
+        });
+        return;
       }
+      guardianLinkedStudentIds = [targetStudent.id];
     }
 
     const rollNumber =
@@ -1510,6 +1553,7 @@ async function startServer() {
     if (user.role === 'guardian') {
       const linkedIds = user.guardianLinkedStudentIds ?? [];
       const linkedCourseIdSet = new Set<string>();
+      const linkedApprovedCourseIdSet = new Set<string>();
       const linkedEnrollmentsAll: Enrollment[] = [];
       const linkedAttemptsAll: ExamAttempt[] = [];
       const linkedAttendanceAll: typeof db.attendance = [];
@@ -1521,8 +1565,12 @@ async function startServer() {
           const childEnrollments = db.enrollments.filter((e) => e.userId === child.id);
           const childAttempts = db.examAttempts.filter((a) => a.userId === child.id);
           const childAttendance = db.attendance.filter((a) => a.targetId === child.id);
-          const childCourseIds = new Set(childEnrollments.map((e) => e.courseId));
-          const childAssignments = db.assignments.filter((a) => childCourseIds.has(a.courseId));
+          const childApprovedCourseIds = new Set(
+            childEnrollments.filter((e) => e.status === 'approved').map((e) => e.courseId)
+          );
+          const childAssignments = db.assignments.filter((a) =>
+            childApprovedCourseIds.has(a.courseId)
+          );
           const childSubmissions = db.assignmentSubmissions.filter((s) => s.userId === child.id);
           const childCertificates = db.certificates.filter((c) => c.userId === child.id && !c.revoked);
           const childOrders = db.orders.filter((o) => o.userId === child.id);
@@ -1531,6 +1579,9 @@ async function startServer() {
           const childLessonsCount: Record<string, number> = {};
           for (const enr of childEnrollments) {
             linkedCourseIdSet.add(enr.courseId);
+            if (enr.status === 'approved') {
+              linkedApprovedCourseIdSet.add(enr.courseId);
+            }
             childLessonsCount[enr.courseId] = db.lessons.filter(
               (l) => l.courseId === enr.courseId && (l.status ?? 'published') !== 'draft'
             ).length;
@@ -1571,9 +1622,11 @@ async function startServer() {
       const relevantCourses = db.courses.filter(
         (c) => linkedCourseIdSet.has(c.id) || isCoursePubliclyListed(c)
       );
-      const relevantLessons = db.lessons.filter(
-        (l) => linkedCourseIdSet.has(l.courseId) && (l.status ?? 'published') !== 'draft'
-      );
+      const relevantLessons = db.lessons
+        .filter(
+          (l) => linkedApprovedCourseIdSet.has(l.courseId) && (l.status ?? 'published') !== 'draft'
+        )
+        .map((l) => redactLessonForViewer(l, true));
 
       return res.json({
         role: user.role,
@@ -1587,7 +1640,7 @@ async function startServer() {
         },
         children,
         branches: db.branches,
-        instructors: db.instructors,
+        instructors: db.instructors.map(sanitizePublicInstructor),
         courses: relevantCourses,
         batches: db.batches.map((b) =>
           redactBatchForViewer(b, user, linkedEnrollmentsAll, db.instructors)
@@ -1601,14 +1654,21 @@ async function startServer() {
     }
 
     // Student
+    const nowMs = Date.now();
     const myEnrollments = db.enrollments.filter((e) => e.userId === user.id);
     const myAttempts = db.examAttempts.filter((a) => a.userId === user.id);
     const myOrders = db.orders.filter((o) => o.userId === user.id);
     const myApprovedCourseIds = new Set(
-      myEnrollments.filter((e) => e.status === 'approved').map((e) => e.courseId)
+      myEnrollments
+        .filter(
+          (e) =>
+            e.status === 'approved' && (!e.expiresAt || Date.parse(e.expiresAt) >= nowMs)
+        )
+        .map((e) => e.courseId)
     );
     return res.json({
       role: user.role,
+      guardianLinkCode: deriveStudentGuardianLinkCode(user, resolveSessionSecret()),
       metrics: {
         enrolledCourses: myApprovedCourseIds.size,
         pendingCourses: myEnrollments.filter((e) => e.status === 'pending').length,
@@ -1626,25 +1686,31 @@ async function startServer() {
       ),
       attendance: db.attendance.filter((a) => a.targetId === user.id),
       modules: db.modules.filter((m) => (m.status ?? 'published') !== 'draft'),
-      lessons: db.lessons.filter((l) => (l.status ?? 'published') !== 'draft'),
+      lessons: db.lessons
+        .filter((l) => (l.status ?? 'published') !== 'draft')
+        .map((l) => redactLessonForViewer(l, myApprovedCourseIds.has(l.courseId))),
       assignments: db.assignments.filter((a) => myApprovedCourseIds.has(a.courseId)),
       assignmentSubmissions: db.assignmentSubmissions.filter((s) => s.userId === user.id),
       announcements: db.announcements.filter((a) => myApprovedCourseIds.has(a.courseId)),
       certificates: db.certificates.filter((c) => c.userId === user.id && !c.revoked),
-      exams: db.exams.map(({ questions, ...rest }) => ({
-        ...rest,
-        questions: questions.map(({ correctIndex: _c, ...q }) => q),
-      })),
+      exams: db.exams
+        .filter(
+          (ex) => ex.visibility === 'public' || (ex.courseId && myApprovedCourseIds.has(ex.courseId))
+        )
+        .map(({ questions, ...rest }) => ({
+          ...rest,
+          questions: questions.map(({ correctIndex: _c, explanation: _e, ...q }) => q),
+        })),
       scormPackages: db.scormPackages,
       scormAttempts: db.scormAttempts.filter((a) => a.userId === user.id),
       rewards: db.rewardsByUser[user.id] ?? null,
       transactions: db.transactions.filter((t) => t.userId === user.id),
       branches: db.branches,
-      instructors: db.instructors,
+      instructors: db.instructors.map(sanitizePublicInstructor),
     });
   });
 
-  // Guardian: Self-service link / unlink student by Roll Number or Email
+  // Guardian: Self-service link / unlink student by Roll Number or Email (requires phone or linking code for guardians)
   app.post(
     '/api/portal/guardian/link-student',
     requireAuth,
@@ -1659,6 +1725,13 @@ async function startServer() {
       const query = String(req.body?.query ?? req.body?.identifier ?? req.body?.rollNumber ?? '')
         .trim()
         .toLowerCase();
+      const verificationInput = String(
+        req.body?.verification ??
+          req.body?.verificationCode ??
+          req.body?.studentPhone ??
+          req.body?.studentVerification ??
+          ''
+      ).trim();
       if (!query) {
         res.status(400).json({ error: 'Enter a student Roll Number or Email address.' });
         return;
@@ -1668,8 +1741,25 @@ async function startServer() {
           u.role === 'student' &&
           ((u.rollNumber ?? '').toLowerCase() === query || u.email.toLowerCase() === query)
       );
-      if (!targetStudent) {
-        res.status(404).json({ error: `No student found matching "${query.toUpperCase()}".` });
+      const admissionPhones = targetStudent
+        ? db.studentAdmissions
+            .filter((a) => a.studentUserId === targetStudent.id && a.guardianPhone)
+            .map((a) => a.guardianPhone ?? '')
+        : [];
+      if (
+        !targetStudent ||
+        !verifyGuardianLinkCredential({
+          actorRole: actor.role,
+          verificationInput,
+          student: targetStudent,
+          admissionGuardianPhones: admissionPhones,
+          secret: resolveSessionSecret(),
+        })
+      ) {
+        res.status(403).json({
+          error:
+            'Verification failed. Confirm the student’s Roll Number/Email and matching registered phone or guardian linking code.',
+        });
         return;
       }
       const existing = actor.guardianLinkedStudentIds ?? [];
@@ -2922,10 +3012,31 @@ async function startServer() {
       const xpDelta = Math.min(200, Math.max(5, Math.round(Number(req.body?.xpDelta) || 25)));
       const reason = String(req.body?.reason ?? 'Excellent class participation').trim().slice(0, 140);
       const db = getDb();
+      const actor = req.authUser!;
       const student = db.users.find((u) => u.id === studentId && u.role === 'student');
       if (!student) {
         res.status(404).json({ error: 'Student not found' });
         return;
+      }
+      if (actor.role === 'teacher') {
+        const assignedCourseIds = getTeacherAssignedCourseIds(
+          actor,
+          db.courses,
+          db.instructors,
+          db.batches
+        );
+        const enrolledWithTeacher = db.enrollments.some(
+          (e) =>
+            e.userId === student.id &&
+            e.status === 'approved' &&
+            assignedCourseIds.has(e.courseId)
+        );
+        if (!enrolledWithTeacher) {
+          res.status(403).json({
+            error: 'Teachers can only award XP to students enrolled in their assigned courses or batches.',
+          });
+          return;
+        }
       }
       const existing = db.rewardsByUser[student.id] ?? {
         userId: student.id,
@@ -3749,16 +3860,37 @@ async function startServer() {
       const assignedIds = getTeacherAssignedCourseIds(actor, db.courses, db.instructors, db.batches);
       const isEnrolledWithTeacher =
         target.role === 'student' &&
-        db.enrollments.some((e) => e.userId === target.id && assignedIds.has(e.courseId));
+        db.enrollments.some(
+          (e) => e.userId === target.id && e.status === 'approved' && assignedIds.has(e.courseId)
+        );
       if (!isEnrolledWithTeacher && target.id !== actor.id) {
         res.status(403).json({
           error: 'Teachers can only inspect records of students enrolled in their assigned courses or batches.',
         });
         return;
       }
-      const enrollments = db.enrollments.filter((e) => e.userId === target.id && assignedIds.has(e.courseId));
-      const examAttempts = db.examAttempts.filter((a) => a.userId === target.id);
-      const attendance = db.attendance.filter((a) => a.targetId === target.id);
+      const enrollments = db.enrollments.filter(
+        (e) => e.userId === target.id && assignedIds.has(e.courseId)
+      );
+      const teacherExamIds = new Set(
+        db.exams
+          .filter(
+            (ex) =>
+              ex.teacherId === actor.id || (ex.courseId && assignedIds.has(ex.courseId))
+          )
+          .map((ex) => ex.id)
+      );
+      const assignedBatchIds = new Set(
+        db.batches.filter((b) => assignedIds.has(b.courseId)).map((b) => b.id)
+      );
+      const examAttempts = db.examAttempts.filter(
+        (a) => a.userId === target.id && teacherExamIds.has(a.examId)
+      );
+      const attendance = db.attendance.filter(
+        (a) =>
+          a.targetId === target.id &&
+          (a.targetId === actor.id || (a.batchId && assignedBatchIds.has(a.batchId)))
+      );
       const rewards = db.rewardsByUser[target.id] ?? null;
       res.json({
         user: sanitizeUser(target),

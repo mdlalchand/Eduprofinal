@@ -1,4 +1,5 @@
 import {
+  Download,
   Facebook,
   Mail,
   MapPin,
@@ -160,6 +161,14 @@ export function Footer({ navigate }: FooterProps) {
           <div className="mt-10 flex flex-col items-center justify-between gap-4 border-t border-white/10 pt-6 text-xs text-slate-400 sm:flex-row">
             <p>{copyrightText}</p>
             <div className="flex flex-wrap items-center gap-5">
+              <a
+                href="/downloads/academy-lms-laravel13.zip"
+                download="academy-lms-laravel13.zip"
+                className="inline-flex items-center gap-1.5 font-semibold text-amber-300 hover:text-amber-200"
+              >
+                <Download className="h-3.5 w-3.5" />
+                <span>Laravel 13 Installer (.zip)</span>
+              </a>
               <a
                 href="/terms-and-conditions"
                 onClick={(e) => go(e, '/terms-and-conditions')}

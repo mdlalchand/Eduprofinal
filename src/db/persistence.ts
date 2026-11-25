@@ -16,6 +16,7 @@ import {
   decryptIntegrationSecret,
   encryptIntegrationSecret,
 } from '../server/integrationSeed';
+import { resolveSessionSecret } from '../server/security';
 import type {
   AttendanceCorrectionEntry,
   Branch,
@@ -83,17 +84,14 @@ export function hashOpaqueToken(rawToken: string): string {
 }
 
 export function getEncryptionKey(): string {
-  if (process.env.INTEGRATION_ENCRYPTION_KEY && process.env.INTEGRATION_ENCRYPTION_KEY.length >= 16) {
-    return process.env.INTEGRATION_ENCRYPTION_KEY;
+  const encKey = (process.env.INTEGRATION_ENCRYPTION_KEY ?? '').trim();
+  if (encKey.length >= 32) {
+    return encKey;
   }
-  if (process.env.SESSION_SECRET && process.env.SESSION_SECRET.length >= 16) {
-    return process.env.SESSION_SECRET;
+  if (encKey.length >= 16 && process.env.NODE_ENV !== 'production') {
+    return encKey;
   }
-  const secretFile = path.join(resolveDataDir(), '.session_secret');
-  if (fs.existsSync(secretFile)) {
-    return fs.readFileSync(secretFile, 'utf8').trim();
-  }
-  return 'edupro-dev-local-encryption-key-change-in-prod';
+  return resolveSessionSecret();
 }
 
 export function getSqliteDb(): Database.Database {

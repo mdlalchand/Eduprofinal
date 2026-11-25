@@ -72,6 +72,7 @@ interface AuthContextValue {
     role: 'student' | 'guardian';
     branchId: string;
     studentRollToLink?: string;
+    studentVerification?: string;
   }) => Promise<boolean>;
   requestPasswordReset: (email: string) => Promise<string | null>;
   confirmPasswordReset: (resetToken: string, newPassword: string) => Promise<boolean>;

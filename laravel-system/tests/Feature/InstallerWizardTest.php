@@ -77,6 +77,12 @@ class InstallerWizardTest extends TestCase
         $this->assertFileExists($this->envPath);
         $this->assertFileExists($this->sqliteTestPath);
 
+        $envContent = (string) file_get_contents($this->envPath);
+        $this->assertStringContainsString('APP_KEY=base64:', $envContent);
+        $this->assertStringContainsString('SESSION_ENCRYPT=true', $envContent);
+        $this->assertStringContainsString('SESSION_HTTP_ONLY=true', $envContent);
+        $this->assertStringContainsString('SESSION_SECURE_COOKIE=true', $envContent);
+
         // Once installed, /install is locked and redirects to home
         $this->get('/install')->assertRedirect(route('home'));
 

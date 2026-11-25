@@ -44,8 +44,37 @@ class AuthController extends Controller
             'role' => 'required|in:student,guardian',
             'branch_id' => $hasBranches ? 'required|exists:branches,id' : 'nullable|exists:branches,id',
             'student_roll_link' => 'nullable|string|max:60',
+            'student_verification' => 'nullable|string|max:80',
             'password' => 'required|string|min:6',
         ]);
+
+        $linkedStudent = null;
+        if ($data['role'] === 'guardian' && !empty(trim((string) ($data['student_roll_link'] ?? '')))) {
+            $rollUpper = strtoupper(trim((string) $data['student_roll_link']));
+            $linkedStudent = User::where('role', 'student')
+                ->where('roll_number', $rollUpper)
+                ->first();
+
+            if (!$linkedStudent) {
+                return back()->withInput()->withErrors([
+                    'student_roll_link' => 'No matching student account was found for that roll ID.',
+                ]);
+            }
+
+            $verification = trim((string) ($data['student_verification'] ?? ''));
+            $normInputDigits = self::normalizePhoneDigits($verification);
+            $normStudentDigits = self::normalizePhoneDigits((string) $linkedStudent->phone);
+            $expectedCode = self::guardianLinkCode($linkedStudent);
+
+            $phoneMatches = $normInputDigits !== '' && $normStudentDigits !== '' && $normInputDigits === $normStudentDigits;
+            $codeMatches = $verification !== '' && hash_equals($expectedCode, strtoupper($verification));
+
+            if (!$phoneMatches && !$codeMatches) {
+                return back()->withInput()->withErrors([
+                    'student_verification' => 'Guardian linking requires the student registered phone number or verified linking code.',
+                ]);
+            }
+        }
 
         $brand = BrandSettings::all();
         $prefix = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string) ($brand['roll_prefix'] ?? 'STD')) ?: 'STD');
@@ -68,21 +97,31 @@ class AuthController extends Controller
             'password' => Hash::make($data['password']),
         ]);
 
-        if ($data['role'] === 'guardian' && !empty($data['student_roll_link'])) {
-            $student = User::where('role', 'student')
-                ->where('roll_number', strtoupper(trim($data['student_roll_link'])))
-                ->first();
-            if ($student) {
-                DB::table('guardian_student')->insertOrIgnore([
-                    'guardian_id' => $user->id,
-                    'student_id' => $student->id,
-                ]);
-            }
+        if ($linkedStudent) {
+            DB::table('guardian_student')->insertOrIgnore([
+                'guardian_id' => $user->id,
+                'student_id' => $linkedStudent->id,
+            ]);
         }
 
         Auth::login($user);
         $request->session()->regenerate();
         return redirect()->route('portal.index')->with('status', 'Account registered successfully.');
+    }
+
+    public static function guardianLinkCode(User $student): string
+    {
+        $key = (string) config('app.key', 'edupro-laravel-key');
+        return 'STD-' . strtoupper(substr(hash_hmac('sha256', $student->id . '|' . $student->email, $key), 0, 6));
+    }
+
+    private static function normalizePhoneDigits(string $phone): string
+    {
+        $digits = preg_replace('/\D+/', '', $phone) ?? '';
+        if (str_starts_with($digits, '8801') && strlen($digits) === 13) {
+            return '0' . substr($digits, 3);
+        }
+        return $digits;
     }
 
     public function logout(Request $request)

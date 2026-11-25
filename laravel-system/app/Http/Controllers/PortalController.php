@@ -1059,21 +1059,15 @@ class PortalController extends Controller
 
     public function createVerifiedBackup(Request $request)
     {
-        $payload = json_encode([
-            'courses' => Course::all()->toArray(),
-            'users' => User::all()->toArray(),
-            'reviews' => Review::all()->toArray(),
-        ]);
-        $checksum = hash('sha256', $payload);
-        BackupSnapshot::create([
-            'label' => $request->input('label', 'Manual Verified Snapshot'),
-            'reason' => 'manual',
-            'checksum_sha256' => $checksum,
-            'verified' => true,
-            'created_by' => $request->user()->name,
-            'payload_json' => $payload,
-        ]);
-        return back()->with('status', 'SHA-256 verified backup snapshot created.');
+        $label = trim((string) $request->input('label', 'Manual Verified Snapshot'));
+        $result = app(SystemUpdateService::class)->createFullBackup(
+            $request->user()->name,
+            $label ?: 'Manual Verified Snapshot'
+        );
+        return back()->with(
+            'status',
+            "SHA-256 verified full backup snapshot (#{$result['snapshot']->id}) created."
+        );
     }
 
     public function restoreRecycleBin(RecycleBinItem $item)

@@ -27,9 +27,25 @@ export function redactDatabaseUrl(input: string): string {
   );
 }
 
+function loadCaCertificate(caPathOverride?: string): string | undefined {
+  const caPath = (caPathOverride ?? process.env.PGSSLROOTCERT ?? '').trim();
+  if (!caPath) return undefined;
+  if (!fs.existsSync(caPath)) {
+    throw new Error(`[DB SSL] Configured PostgreSQL CA root certificate not found at "${caPath}".`);
+  }
+  return fs.readFileSync(caPath, 'utf8');
+}
+
+function isLocalDbHost(host: string): boolean {
+  const clean = host.trim().toLowerCase();
+  return clean === '' || clean === 'localhost' || clean === '127.0.0.1' || clean === '::1';
+}
+
 export function parsePgSslConfig(
   pgSslRaw = process.env.PGSSL,
-  databaseUrl = process.env.DATABASE_URL
+  databaseUrl = process.env.DATABASE_URL,
+  pgHost = process.env.PGHOST,
+  caPathOverride = process.env.PGSSLROOTCERT
 ): PgSslConfig {
   const normalized = (pgSslRaw ?? '').trim().toLowerCase();
 
@@ -46,45 +62,56 @@ export function parsePgSslConfig(
   if (
     normalized === 'verify-full' ||
     normalized === 'verify-ca' ||
-    normalized === 'strict'
-  ) {
-    const caPath = (process.env.PGSSLROOTCERT ?? '').trim();
-    const ca = caPath && fs.existsSync(caPath) ? fs.readFileSync(caPath, 'utf8') : undefined;
-    return ca ? { rejectUnauthorized: true, ca } : { rejectUnauthorized: true };
-  }
-
-  if (
+    normalized === 'strict' ||
     normalized === 'true' ||
     normalized === 'require' ||
     normalized === '1' ||
     normalized === 'on' ||
-    normalized === 'yes' ||
-    normalized === 'no-verify' ||
-    normalized === 'allow'
+    normalized === 'yes'
   ) {
-    return { rejectUnauthorized: false };
+    const ca = loadCaCertificate(caPathOverride);
+    return ca ? { rejectUnauthorized: true, ca } : { rejectUnauthorized: true };
   }
 
-  // Fallback: inspect sslmode query parameter inside DATABASE_URL if PGSSL is unset
-  if (databaseUrl) {
+  if (normalized === 'no-verify' || normalized === 'allow') {
+    const ca = loadCaCertificate(caPathOverride);
+    return ca ? { rejectUnauthorized: false, ca } : { rejectUnauthorized: false };
+  }
+
+  // Fallback: inspect sslmode / sslrootcert query parameters inside DATABASE_URL when PGSSL is unset
+  if (databaseUrl && databaseUrl.trim()) {
     try {
-      const parsed = new URL(databaseUrl);
+      const parsed = new URL(databaseUrl.trim());
       const sslMode = (parsed.searchParams.get('sslmode') ?? '').trim().toLowerCase();
+      const urlRootCert = (parsed.searchParams.get('sslrootcert') ?? '').trim();
+      const effectiveCaPath = urlRootCert || caPathOverride;
+
       if (sslMode === 'disable') return false;
-      if (sslMode === 'verify-full' || sslMode === 'verify-ca') {
-        return { rejectUnauthorized: true };
+      if (sslMode === 'verify-full' || sslMode === 'verify-ca' || sslMode === 'require') {
+        const ca = loadCaCertificate(effectiveCaPath);
+        return ca ? { rejectUnauthorized: true, ca } : { rejectUnauthorized: true };
       }
-      if (sslMode === 'require' || sslMode === 'no-verify' || sslMode === 'prefer') {
-        return { rejectUnauthorized: false };
+      if (sslMode === 'no-verify' || sslMode === 'prefer' || sslMode === 'allow') {
+        const ca = loadCaCertificate(effectiveCaPath);
+        return ca ? { rejectUnauthorized: false, ca } : { rejectUnauthorized: false };
       }
-      const host = parsed.hostname.toLowerCase();
-      if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
+      if (isLocalDbHost(parsed.hostname)) {
         return false;
       }
-      return { rejectUnauthorized: false };
-    } catch {
+      const ca = loadCaCertificate(effectiveCaPath);
+      return ca ? { rejectUnauthorized: true, ca } : { rejectUnauthorized: true };
+    } catch (err) {
+      if (err instanceof Error && err.message.startsWith('[DB SSL]')) {
+        throw err;
+      }
       return false;
     }
+  }
+
+  // Fallback when PGHOST is configured without DATABASE_URL
+  if (pgHost && !isLocalDbHost(pgHost)) {
+    const ca = loadCaCertificate(caPathOverride);
+    return ca ? { rejectUnauthorized: true, ca } : { rejectUnauthorized: true };
   }
 
   return false;
@@ -92,11 +119,16 @@ export function parsePgSslConfig(
 
 export function describePgSslMode(
   pgSslRaw = process.env.PGSSL,
-  databaseUrl = process.env.DATABASE_URL
+  databaseUrl = process.env.DATABASE_URL,
+  pgHost = process.env.PGHOST,
+  caPathOverride = process.env.PGSSLROOTCERT
 ): string {
-  const cfg = parsePgSslConfig(pgSslRaw, databaseUrl);
+  const cfg = parsePgSslConfig(pgSslRaw, databaseUrl, pgHost, caPathOverride);
   if (cfg === false) return 'disabled';
-  return cfg.rejectUnauthorized ? 'enabled (verify-full)' : 'enabled (require / no-verify)';
+  if (cfg.rejectUnauthorized) {
+    return cfg.ca ? 'enabled (verify-full + CA)' : 'enabled (verify-full)';
+  }
+  return 'enabled (no-verify)';
 }
 
 export function isSmtpConfigured(integrations: IntegrationConfig[] = []): boolean {
@@ -200,7 +232,8 @@ export function getSafeEnvironmentValidationReport(
   integrations: IntegrationConfig[] = []
 ): SafeEnvValidationReport {
   const isPg =
-    isEnvSet('DATABASE_URL') && (process.env.DB_DRIVER ?? '').trim().toLowerCase() !== 'sqlite';
+    (isEnvSet('DATABASE_URL') || isEnvSet('PGHOST')) &&
+    (process.env.DB_DRIVER ?? '').trim().toLowerCase() !== 'sqlite';
 
   const specs: Array<{
     key: string;
@@ -219,7 +252,7 @@ export function getSafeEnvironmentValidationReport(
       key: 'PGSSL',
       category: 'Database',
       required: false,
-      note: 'PostgreSQL SSL mode: false | disable | require | verify-full',
+      note: 'PostgreSQL SSL mode: disable | verify-full | require | no-verify',
     },
     {
       key: 'SESSION_SECRET',
@@ -360,7 +393,10 @@ export function getSafeEnvironmentValidationReport(
   // Never include actual env values in the report — booleans & variable names only
   const items: SafeEnvVarCheckItem[] = specs.map((s) => {
     const keys = [s.key, ...(s.altKeys ?? [])];
-    const configured = keys.some((k) => isEnvSet(k));
+    const configured =
+      s.key === 'SESSION_SECRET'
+        ? (process.env.SESSION_SECRET ?? '').trim().length >= 32
+        : keys.some((k) => isEnvSet(k));
     return {
       key: s.key,
       category: s.category,
@@ -381,7 +417,7 @@ export function getSafeEnvironmentValidationReport(
     totalConfigured,
     totalChecked: items.length,
     activeDatabaseEngine: isPg ? 'postgresql' : 'sqlite',
-    pgSslMode: isEnvSet('DATABASE_URL') ? describePgSslMode() : 'not configured',
+    pgSslMode: isEnvSet('DATABASE_URL') || isEnvSet('PGHOST') ? describePgSslMode() : 'not configured',
     integrationsStatus: {
       smtp: isSmtpConfigured(integrations),
       sms: isSmsGatewayConfigured(integrations),

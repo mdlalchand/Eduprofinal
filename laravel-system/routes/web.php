@@ -25,16 +25,17 @@ Route::get('/instructors', [PublicController::class, 'instructors'])->name('inst
 Route::get('/products', [ShopController::class, 'products'])->name('products');
 Route::get('/ebooks', [ShopController::class, 'ebooks'])->name('ebooks');
 Route::get('/board-result', [PublicController::class, 'results'])->name('results');
-Route::post('/board-result/lookup', [PublicController::class, 'lookupResult'])->name('results.lookup');
+Route::post('/board-result/lookup', [PublicController::class, 'lookupResult'])->middleware('throttle:30,5')->name('results.lookup');
 Route::get('/community', [PublicController::class, 'community'])->name('community');
 Route::post('/community/{post}/like', [PublicController::class, 'likeCommunityPost'])->name('community.like');
 Route::get('/verify-certificate', [PublicController::class, 'verifyCertificate'])->name('certificates.verify');
-Route::post('/verify-certificate', [PublicController::class, 'lookupCertificate'])->name('certificates.lookup');
+Route::post('/verify-certificate', [PublicController::class, 'lookupCertificate'])->middleware('throttle:30,5')->name('certificates.lookup');
+Route::post('/payments/webhook/{gateway}', [PublicController::class, 'paymentWebhook'])->name('payments.webhook');
 
 // Auth
 Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
-Route::post('/login', [AuthController::class, 'login'])->name('login.post');
-Route::post('/register', [AuthController::class, 'register'])->name('register.post');
+Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:15,5')->name('login.post');
+Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:15,5')->name('register.post');
 Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 
 // Authenticated Learning, Commerce & Multi-Role Portal Routes

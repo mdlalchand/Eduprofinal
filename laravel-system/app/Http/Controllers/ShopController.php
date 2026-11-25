@@ -56,8 +56,14 @@ class ShopController extends Controller
         return back()->with('status', 'Order placed successfully!');
     }
 
-    public function claimEbook(Ebook $ebook)
+    public function claimEbook(Request $request, Ebook $ebook)
     {
+        if (!$ebook->is_free && $ebook->price > 0) {
+            $trxId = trim((string) $request->input('trx_id', ''));
+            if ($trxId === '') {
+                return back()->withErrors(['ebook' => "Paid E-Book '{$ebook->title}' requires verified payment checkout."]);
+            }
+        }
         return back()->with('status', "E-Book '{$ebook->title}' unlocked in your library!");
     }
 }

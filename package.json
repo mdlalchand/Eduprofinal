@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "start": "NODE_ENV=production tsx server.ts",
+    "start": "tsx server.ts",
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
@@ -27,8 +27,7 @@
     "pg": "^8.23.1",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
-    "vite": "^8.3.0",
-    "zod": "^4.6.7"
+    "vite": "^8.3.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
