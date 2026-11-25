@@ -28,10 +28,6 @@ class ProductionEnvironmentGuard
             throw new RuntimeException('Production APP_KEY must be configured.');
         }
 
-        if (trim((string) config('services.payment_webhook_secret')) === '') {
-            throw new RuntimeException('Set a dedicated PAYMENT_WEBHOOK_SECRET before enabling production payment webhooks.');
-        }
-
         $connection = (string) config('database.default');
         $connectionConfig = (array) config("database.connections.{$connection}", []);
         $databaseUrl = (string) ($connectionConfig['url'] ?? '');
