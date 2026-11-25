@@ -888,7 +888,8 @@ class PortalController extends Controller
         }
 
         $raw = DB::table('settings')->where('key', 'custom_pages')->value('value');
-        $pages = $raw ? (json_decode($raw, true) ?: []) : [];
+        $decodedPages = $raw ? json_decode($raw, true) : [];
+        $pages = is_array($decodedPages) ? $decodedPages : [];
         if (collect($pages)->contains(fn ($page) => is_array($page) && ($page['slug'] ?? '') === $slug)) {
             return back()->withErrors(['slug' => 'A custom page already uses this URL slug.']);
         }
@@ -908,7 +909,8 @@ class PortalController extends Controller
     public function deleteCustomPage(string $slug)
     {
         $raw = DB::table('settings')->where('key', 'custom_pages')->value('value');
-        $pages = $raw ? (json_decode($raw, true) ?: []) : [];
+        $decodedPages = $raw ? json_decode($raw, true) : [];
+        $pages = is_array($decodedPages) ? $decodedPages : [];
         $pages = array_values(array_filter($pages, fn ($page) => !is_array($page) || ($page['slug'] ?? '') !== $slug));
         DB::table('settings')->updateOrInsert(['key' => 'custom_pages'], ['value' => json_encode($pages, JSON_UNESCAPED_UNICODE)]);
         return back()->with('status', 'Custom page removed.');
