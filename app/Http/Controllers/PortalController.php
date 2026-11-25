@@ -57,6 +57,7 @@ class PortalController extends Controller
             $contactInquiries = ContactInquiry::with('branch')->latest()->take(50)->get();
             $customPagesRaw = DB::table('settings')->where('key', 'custom_pages')->value('value');
             $customPages = $customPagesRaw ? (json_decode($customPagesRaw, true) ?: []) : [];
+            $contentSettings = DB::table('settings')->whereIn('key', ['about_mission', 'terms_content', 'privacy_content', 'refund_content'])->pluck('value', 'key')->all();
             $questionBank = QuestionBankItem::latest()->get();
             $products = Product::latest()->get();
             $ebooks = Ebook::latest()->get();
@@ -85,7 +86,7 @@ class PortalController extends Controller
             $apiConnectors = $connectorsRaw ? (json_decode($connectorsRaw, true) ?? []) : self::defaultApiConnectors();
             return view('portal.index', compact(
                 'user', 'branches', 'courses', 'batches', 'lessons', 'exams', 'users',
-                'enrollments', 'orders', 'reviews', 'heroSlides', 'homepageConfig', 'contactInquiries', 'customPages',
+                'enrollments', 'orders', 'reviews', 'heroSlides', 'homepageConfig', 'contactInquiries', 'customPages', 'contentSettings',
                 'paymentGateways', 'apiConnectors',
                 'questionBank', 'products', 'ebooks', 'categories', 'posts', 'coupons',
                 'attendance', 'payrolls', 'financialRecords', 'scormPackages', 'backups', 'recycleBin',
