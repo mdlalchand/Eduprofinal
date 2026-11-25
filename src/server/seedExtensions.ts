@@ -525,7 +525,7 @@ export function createExtendedSeedCollections() {
       name: '5-Agent AI Tutor & Exam Copilot',
       category: 'AI',
       version: '4.0.0',
-      active: Boolean(process.env.GEMINI_API_KEY),
+      active: Boolean(process.env.AI_API_KEY),
       environment: 'production',
       endpointUrl: '/api/ai/chat',
       apiKeyMasked: process.env.GEMINI_API_KEY ? 'Configured (Env)' : 'Not Configured',
