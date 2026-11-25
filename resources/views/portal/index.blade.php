@@ -28,6 +28,7 @@
 
     @if($user->role === 'admin')
         @include('portal.partials.branding-and-updates')
+        @include('portal.partials.content-pages')
 
         @php
             $dynamicCourseCats = collect($categories ?? [])->where('type', 'course')->where('active', true)->pluck('name')->all();
