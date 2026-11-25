@@ -29,7 +29,7 @@ jobs:
           test ! -e package.json
           test ! -e server.ts
           test ! -d src
-          if git grep -niE 'Google AI Studio|aistudio' -- .; then exit 1; fi
+          if git grep -niE 'Google AI Studio|aistudio' -- . ':!.github/workflows/ci.yml'; then exit 1; fi
 
       - name: Validate PHP syntax
         run: |
