@@ -6,6 +6,7 @@ use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\ExamController;
 use App\Http\Controllers\InstallController;
 use App\Http\Controllers\PortalController;
+use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PublicController;
 use App\Http\Controllers\ShopController;
 use App\Http\Controllers\SystemUpdateController;
@@ -43,7 +44,8 @@ Route::post('/recover/confirm', [AuthController::class, 'confirmPasswordReset'])
 Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 
 // Authenticated Learning, Commerce & Multi-Role Portal Routes
-Route::middleware('auth')->group(function () {\n    Route::get('/profile', [ProfileController::class, 'show'])->name('profile');\n    Route::put('/profile', [ProfileController::class, 'update'])->name('profile.update');\n    Route::put('/profile/password', [ProfileController::class, 'updatePassword'])->name('profile.password.update');
+Route::middleware('auth')->group(function () {
+    Route::get('/profile', [ProfileController::class, 'show'])->name('profile');\n    Route::put('/profile', [ProfileController::class, 'update'])->name('profile.update');\n    Route::put('/profile/password', [ProfileController::class, 'updatePassword'])->name('profile.password.update');
     Route::get('/learn', [PublicController::class, 'learn'])->name('learn');
     Route::post('/learn/progress', [PublicController::class, 'markLessonComplete'])->name('learn.progress');
 
