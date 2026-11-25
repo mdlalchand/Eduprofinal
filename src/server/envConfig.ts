@@ -252,7 +252,7 @@ export function getSafeEnvironmentValidationReport(
       key: 'PGSSL',
       category: 'Database',
       required: false,
-      note: 'PostgreSQL SSL mode: disable | verify-full | require | no-verify',
+      note: 'PostgreSQL SSL mode: verify-full (production) or prefer (local development)',
     },
     {
       key: 'SESSION_SECRET',
@@ -383,10 +383,10 @@ export function getSafeEnvironmentValidationReport(
       note: 'WhatsApp Business Cloud API Access Token',
     },
     {
-      key: 'GEMINI_API_KEY',
+      key: 'AI_API_KEY',
       category: 'AI',
       required: false,
-      note: 'Server-side Gemini API key for AI Tutor & question generation',
+      note: 'Server-side API key for the configured AI provider',
     },
   ];
 
