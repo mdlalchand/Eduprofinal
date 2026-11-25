@@ -53,7 +53,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/exams/{exam}/submit', [ExamController::class, 'submit'])->name('exams.submit');
 
     Route::post('/shop/order', [ShopController::class, 'placeOrder'])->name('shop.order');
-    Route::post('/ebooks/{ebook}/claim', [ShopController::class, 'claimEbook'])->name('ebooks.claim');
+    Route::post('/ebooks/{ebook}/claim', [ShopController::class, 'claimEbook'])->middleware('role:student')->name('ebooks.claim');
 
     // Unified Multi-Role Portal (/portal)
     Route::prefix('portal')->group(function () {
