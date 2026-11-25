@@ -102,4 +102,45 @@ class InstallerWizardTest extends TestCase
         $this->assertSame('€', $currencySetting);
         $this->assertSame('APEX', $prefixSetting);
     }
+    public function test_installer_rejects_non_https_site_url(): void
+    {
+        $this->post('/install/run', [
+            'company_name' => 'Secure Academy',
+            'app_url' => 'http://academy.example.com',
+            'support_email' => 'support@academy.example.com',
+            'currency_symbol' => '৳',
+            'roll_prefix' => 'SEC',
+            'db_connection' => 'sqlite',
+            'db_database' => $this->sqliteTestPath,
+            'admin_name' => 'Secure Admin',
+            'admin_email' => 'admin@academy.example.com',
+            'admin_password' => 'StrongPass123!',
+        ])->assertSessionHasErrors('app_url');
+
+        $this->assertFileDoesNotExist($this->lockPath);
+    }
+
+    public function test_installer_rejects_remote_database_without_a_readable_ca_certificate(): void
+    {
+        $this->post('/install/run', [
+            'company_name' => 'Secure Academy',
+            'app_url' => 'https://academy.example.com',
+            'support_email' => 'support@academy.example.com',
+            'currency_symbol' => '৳',
+            'roll_prefix' => 'SEC',
+            'db_connection' => 'mysql',
+            'db_host' => 'db.example.com',
+            'db_port' => 3306,
+            'db_database' => 'academy_lms',
+            'db_username' => 'academy',
+            'db_password' => 'not-a-real-password',
+            'db_sslmode' => 'verify-full',
+            'admin_name' => 'Secure Admin',
+            'admin_email' => 'admin@academy.example.com',
+            'admin_password' => 'StrongPass123!',
+        ])->assertSessionHasErrors('db_sslrootcert');
+
+        $this->assertFileDoesNotExist($this->lockPath);
+    }
+
 }
