@@ -56,7 +56,8 @@ class PortalController extends Controller
             $reviews = Review::latest()->get();
             $contactInquiries = ContactInquiry::with('branch')->latest()->take(50)->get();
             $customPagesRaw = DB::table('settings')->where('key', 'custom_pages')->value('value');
-            $customPages = $customPagesRaw ? (json_decode($customPagesRaw, true) ?: []) : [];
+            $decodedCustomPages = $customPagesRaw ? json_decode($customPagesRaw, true) : [];
+            $customPages = is_array($decodedCustomPages) ? $decodedCustomPages : [];
             $contentSettings = DB::table('settings')->whereIn('key', ['about_mission', 'terms_content', 'privacy_content', 'refund_content'])->pluck('value', 'key')->all();
             $questionBank = QuestionBankItem::latest()->get();
             $products = Product::latest()->get();
