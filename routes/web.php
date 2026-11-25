@@ -10,6 +10,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PublicController;
 use App\Http\Controllers\ShopController;
 use App\Http\Controllers\SystemUpdateController;
+use App\Http\Controllers\StaticPageController;
 use Illuminate\Support\Facades\Route;
 
 // Ready-to-Install Web Wizard (automatically locked after storage/installed.lock exists)
@@ -19,6 +20,15 @@ Route::prefix('install')->group(function () {
 });
 
 // Public Pages
+Route::get('/about-us', [StaticPageController::class, 'about'])->name('about');
+Route::get('/about', [StaticPageController::class, 'about']);
+Route::get('/contact-us', [StaticPageController::class, 'contact'])->name('contact.alias');
+Route::get('/contact', [StaticPageController::class, 'contact'])->name('contact');
+Route::post('/contact', [StaticPageController::class, 'submitContact'])->middleware('throttle:10,5')->name('contact.submit');
+Route::get('/terms-and-conditions', [StaticPageController::class, 'policy'])->defaults('type', 'terms')->name('policy.terms');
+Route::get('/privacy-policy', [StaticPageController::class, 'policy'])->defaults('type', 'privacy')->name('policy.privacy');
+Route::get('/refund-policy', [StaticPageController::class, 'policy'])->defaults('type', 'refund')->name('policy.refund');
+Route::get('/page/{slug}', [StaticPageController::class, 'customPage'])->name('pages.show');
 Route::get('/', [PublicController::class, 'home'])->name('home');
 Route::get('/courses', [PublicController::class, 'courses'])->name('courses.index');
 Route::get('/course/{slug}', [PublicController::class, 'courseDetail'])->name('courses.show');
@@ -29,7 +39,7 @@ Route::get('/board-result', [PublicController::class, 'results'])->name('results
 Route::post('/board-result/lookup', [PublicController::class, 'lookupResult'])->middleware('throttle:30,5')->name('results.lookup');
 Route::get('/community', [PublicController::class, 'community'])->name('community');
 Route::post('/community/{post}/like', [PublicController::class, 'likeCommunityPost'])->name('community.like');
-Route::get('/verify-certificate', [PublicController::class, 'verifyCertificate'])->name('certificates.verify');
+Route::get('/verify-certificate/{code?}', [PublicController::class, 'verifyCertificate'])->name('certificates.verify');
 Route::post('/verify-certificate', [PublicController::class, 'lookupCertificate'])->middleware('throttle:30,5')->name('certificates.lookup');
 Route::post('/payments/webhook/{gateway}', [PublicController::class, 'paymentWebhook'])->name('payments.webhook');
 
