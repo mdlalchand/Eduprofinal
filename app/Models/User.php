@@ -51,6 +51,11 @@ class User extends Authenticatable
         return $this->hasMany(Certificate::class);
     }
 
+    public function ebooks()
+    {
+        return $this->belongsToMany(Ebook::class, 'ebook_user')->withTimestamps();
+    }
+
     public function linkedStudents()
     {
         return $this->belongsToMany(User::class, 'guardian_student', 'guardian_id', 'student_id');
